@@ -15,3 +15,5 @@
 - 2026-06-09: Storage is local-only on the user's MacBook. No account, server, or cross-device sync is needed.
 - 2026-06-09: Calendar tracking only needs done/not-done per day. During a workout, per-set state is used for progress.
 - 2026-06-09: Rest timer completion should use both sound and visual emphasis. Alarm volume control is desired.
+- 2026-06-09: Approved product approach is Node-based web UI first, designed so it can be packaged as a Mac desktop app with Electron later.
+- 2026-06-09: User approved product structure, screens, data model, local storage scope, and first-version exception handling.
