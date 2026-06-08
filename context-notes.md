@@ -1,0 +1,17 @@
+# Workout Companion Context Notes
+
+- 2026-06-09: Repository is an empty git repository with no commits and no `.cursor/rules` directory.
+- 2026-06-09: User currently works out with YouTube on a MacBook and uses a phone only as a stopwatch.
+- 2026-06-09: Product should target a MacBook-centered workflow first. Node-based UI with later Mac desktop packaging is acceptable.
+- 2026-06-09: YouTube should be playable inside the app, without tight coupling to routines.
+- 2026-06-09: Main workout control should be a draggable floating overlay over the YouTube area. Direction is between compact and large controls.
+- 2026-06-09: Screen button click is the primary workout input. Keyboard shortcuts are secondary.
+- 2026-06-09: Default behavior after a set is complete is to record the set and start the rest timer. Rest completion alerts the user, and next set starts manually.
+- 2026-06-09: Workout data model separates an exercise list from weekly routine presets.
+- 2026-06-09: Exercise list items are concrete execution units, including exercise name, weight, reps, sets, and rest time.
+- 2026-06-09: Multiple exercise list items can share the same exercise name with different weight or reps.
+- 2026-06-09: When an exercise item is placed into a routine, it is copied into that routine. Later exercise list edits do not mutate existing routines.
+- 2026-06-09: A routine is a named weekly group with day-specific exercise placements. Multiple routines can exist, but only one active routine drives the program.
+- 2026-06-09: Storage is local-only on the user's MacBook. No account, server, or cross-device sync is needed.
+- 2026-06-09: Calendar tracking only needs done/not-done per day. During a workout, per-set state is used for progress.
+- 2026-06-09: Rest timer completion should use both sound and visual emphasis. Alarm volume control is desired.
