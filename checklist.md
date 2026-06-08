@@ -10,5 +10,5 @@
 - [x] Present design sections for approval.
 - [x] Write and commit design spec.
 - [x] Self-review design spec.
-- [ ] Ask user to review written spec.
+- [x] Ask user to review written spec.
 - [ ] Transition to implementation planning.
