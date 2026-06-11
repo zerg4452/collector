@@ -72,4 +72,25 @@ describe("migration", () => {
     expect(needsMigration([legacyExercise], [])).toBe(true);
     expect(needsMigration([v2], [])).toBe(false);
   });
+
+  it("detects legacy snapshots inside routine days", () => {
+    const legacyRoutine = {
+      id: "routine-1",
+      name: "기본 루틴",
+      isActive: true,
+      days: { ...emptyRoutineDays(), monday: [legacySnapshot] },
+      createdAt: "2026-06-11T00:00:00.000Z",
+      updatedAt: "2026-06-11T00:00:00.000Z"
+    } as unknown as RoutinePreset;
+
+    expect(needsMigration([], [legacyRoutine])).toBe(true);
+    expect(needsMigration([], [migrateRoutine(legacyRoutine)])).toBe(false);
+  });
+
+  it("clamps zero sets and reps to one during migration", () => {
+    const migrated = migrateExercise({ ...legacyExercise, sets: 0, targetReps: 0 });
+
+    expect(migrated.segments[0].sets).toBe(1);
+    expect(migrated.segments[0].reps).toBe(1);
+  });
 });
