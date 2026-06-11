@@ -4,6 +4,7 @@ import type { ExerciseItem, RoutineBlock, RoutinePreset, SetSegment } from "../t
 import {
   advanceSet,
   createBlockExercise,
+  createCompletion,
   createMultiBlock,
   createSingleBlock,
   emptyRoutineDays,
@@ -254,5 +255,16 @@ describe("workout session", () => {
     expect(result.state.phase).toBe("ready");
     expect(result.state.blockIndex).toBe(1);
     expect(result.restSourceSeconds).toBe(0);
+  });
+});
+
+describe("completion", () => {
+  it("creates a completion keyed by its date for storage", () => {
+    const completion = createCompletion("routine-1", new Date("2026-06-12T10:00:00+09:00"));
+
+    expect(completion.id).toBe("2026-06-12");
+    expect(completion.date).toBe(completion.id);
+    expect(completion.completed).toBe(true);
+    expect(completion.routinePresetId).toBe("routine-1");
   });
 });

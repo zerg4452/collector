@@ -2,6 +2,7 @@
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { YoutubePlaylist } from "../types";
+import { isHttpUrl } from "../utils/youtube";
 
 type PlaylistViewProps = {
   playlists: YoutubePlaylist[];
@@ -40,7 +41,7 @@ function PlaylistView({
 
   const handleAddItem = () => {
     const url = urlInput.trim();
-    if (!selected || !url) {
+    if (!selected || !isHttpUrl(url)) {
       return;
     }
     onAddItem(selected.id, url);

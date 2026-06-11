@@ -57,6 +57,7 @@ export type RoutinePreset = {
 };
 
 export type WorkoutCompletion = {
+  id: string;                // 날짜 키와 동일 (하루 1건)
   date: string;
   completed: boolean;
   routinePresetId: string;

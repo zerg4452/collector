@@ -305,6 +305,7 @@ export const createCompletion = (
   routinePresetId: string,
   date = new Date()
 ): WorkoutCompletion => ({
+  id: toDateKey(date),
   date: toDateKey(date),
   completed: true,
   routinePresetId,
