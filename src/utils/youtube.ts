@@ -43,3 +43,25 @@ export const isHttpUrl = (value: string) => {
     return false;
   }
 };
+
+export const nextPlaylistIndex = (length: number, current: number) =>
+  length <= 0 ? 0 : (current + 1) % length;
+
+export const previousPlaylistIndex = (length: number, current: number) =>
+  length <= 0 ? 0 : (current - 1 + length) % length;
+
+// 제목 취득 실패(오프라인 등) 시 URL을 그대로 라벨로 쓴다.
+export const fetchYoutubeTitle = async (url: string): Promise<string> => {
+  try {
+    const response = await fetch(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`
+    );
+    if (!response.ok) {
+      return url;
+    }
+    const data = (await response.json()) as { title?: string };
+    return data.title?.trim() || url;
+  } catch {
+    return url;
+  }
+};
