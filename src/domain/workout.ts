@@ -123,7 +123,7 @@ export const describeSegments = (segments: SetSegment[]) =>
 
 export const parseClusterReps = (value: string): number[] | null => {
   const parts = value.split("+").map((part) => part.trim());
-  if (parts.length === 0 || parts.some((part) => !/^[0-9]+$/.test(part) || Number(part) < 1)) {
+  if (parts.some((part) => !/^[0-9]+$/.test(part) || Number(part) < 1)) {
     return null;
   }
   return parts.map(Number);
@@ -145,24 +145,25 @@ export const createBlockExercise = (
   order
 });
 
-export const createSingleBlock = (exercise: ExerciseItem): RoutineBlock => ({
+export const createSingleBlock = (exercise: ExerciseItem, order = 0): RoutineBlock => ({
   id: createId("block"),
   exercises: [createBlockExercise(exercise, 0)],
   rounds: Math.max(1, totalSets(exercise.segments)),
   restSeconds: exercise.restSeconds,
-  order: 0
+  order
 });
 
 export const createMultiBlock = (
   exercises: BlockExerciseSnapshot[],
   rounds: number,
-  restSeconds: number
+  restSeconds: number,
+  order = 0
 ): RoutineBlock => ({
   id: createId("block"),
   exercises: exercises.map((exercise, index) => ({ ...exercise, order: index })),
   rounds: Math.max(1, rounds),
   restSeconds: Math.max(0, restSeconds),
-  order: 0
+  order
 });
 
 // --- 루틴 ---
@@ -225,6 +226,22 @@ export const advanceSet = (
     return { state, completedWorkout: state.phase === "complete", restSourceSeconds: 0 };
   }
 
+  // 빈 블록은 휴식 없이 건너뛴다 (방어적 가드 — 평소엔 getRoutineForDate가 걸러냄)
+  if (block.exercises.length === 0) {
+    if (state.blockIndex >= blocks.length - 1) {
+      return {
+        state: { ...state, phase: "complete", remainingRestSeconds: 0 },
+        completedWorkout: true,
+        restSourceSeconds: 0
+      };
+    }
+    return {
+      state: { ...state, blockIndex: state.blockIndex + 1, round: 1, exerciseIndex: 0 },
+      completedWorkout: false,
+      restSourceSeconds: 0
+    };
+  }
+
   // 1. 블록 안 다음 종목으로 — 휴식 없음
   if (state.exerciseIndex < block.exercises.length - 1) {
     return {
@@ -234,14 +251,14 @@ export const advanceSet = (
     };
   }
 
-  // 2. 라운드 종료, 다음 라운드 남음 — 라운드 휴식
+  // 2. 라운드 종료, 다음 라운드 남음 — 라운드 휴식 (0초면 바로 진행)
   if (state.round < block.rounds) {
     return {
       state: {
         ...state,
         round: state.round + 1,
         exerciseIndex: 0,
-        phase: "rest",
+        phase: block.restSeconds > 0 ? "rest" : "ready",
         remainingRestSeconds: block.restSeconds
       },
       completedWorkout: false,
@@ -258,13 +275,13 @@ export const advanceSet = (
     };
   }
 
-  // 4. 다음 블록으로 — 끝난 블록의 휴식 적용
+  // 4. 다음 블록으로 — 끝난 블록의 휴식 적용 (0초면 바로 진행)
   return {
     state: {
       blockIndex: state.blockIndex + 1,
       round: 1,
       exerciseIndex: 0,
-      phase: "rest",
+      phase: block.restSeconds > 0 ? "rest" : "ready",
       remainingRestSeconds: block.restSeconds
     },
     completedWorkout: false,

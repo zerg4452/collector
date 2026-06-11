@@ -114,6 +114,13 @@ describe("blocks", () => {
     expect(block.rounds).toBe(3);
     expect(block.restSeconds).toBe(30);
   });
+
+  it("accepts an explicit order for created blocks", () => {
+    expect(createSingleBlock(exercise(), 4).order).toBe(4);
+    expect(
+      createMultiBlock([createBlockExercise(exercise(), 0)], 2, 30, 7).order
+    ).toBe(7);
+  });
 });
 
 describe("routine plan", () => {
@@ -215,5 +222,37 @@ describe("workout session", () => {
     const resting = { ...initialWorkoutSession(), phase: "rest" as const };
     expect(advanceSet(resting, [multiBlock()]).state).toEqual(resting);
     expect(advanceSet(initialWorkoutSession(), []).completedWorkout).toBe(false);
+  });
+
+  it("skips the rest phase when the block rest is zero", () => {
+    const single = createSingleBlock(
+      exercise({ id: "exercise-1", segments: [normalSegment({ sets: 2 })], restSeconds: 0 })
+    );
+
+    const result = advanceSet(initialWorkoutSession(), [single]);
+
+    expect(result.state.phase).toBe("ready");
+    expect(result.state.round).toBe(2);
+    expect(result.restSourceSeconds).toBe(0);
+  });
+
+  it("skips empty blocks without consuming a rest", () => {
+    const emptyBlock: RoutineBlock = {
+      id: "block-empty",
+      exercises: [],
+      rounds: 3,
+      restSeconds: 60,
+      order: 0
+    };
+    const single = createSingleBlock(exercise({ segments: [normalSegment({ sets: 1 })] }));
+
+    const result = advanceSet(
+      { ...initialWorkoutSession(), blockIndex: 0 },
+      [emptyBlock, single]
+    );
+
+    expect(result.state.phase).toBe("ready");
+    expect(result.state.blockIndex).toBe(1);
+    expect(result.restSourceSeconds).toBe(0);
   });
 });
