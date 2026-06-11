@@ -252,6 +252,14 @@ button:focus-visible {
   border: 1px solid #262b33;
 }
 
+.video-stage:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  border: 0;
+  border-radius: 0;
+}
+
 .video-stage iframe {
   position: absolute;
   inset: 0;
@@ -283,12 +291,12 @@ button:focus-visible {
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 3;
+  z-index: 10;
   display: grid;
-  grid-template-columns: 36px minmax(190px, 1fr) 82px auto 40px;
+  grid-template-columns: 36px minmax(190px, 1fr) 82px auto 40px 40px;
   align-items: center;
   gap: 10px;
-  min-width: 610px;
+  min-width: 660px;
   max-width: 760px;
   padding: 12px;
   border-radius: 8px;

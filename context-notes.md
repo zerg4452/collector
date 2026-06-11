@@ -22,3 +22,4 @@
 - 2026-06-11: Implementation plan created for a Vite React TypeScript MVP with IndexedDB local storage.
 - 2026-06-11: Implemented Vite React app with local IndexedDB storage, routine editing, exercise library, workout overlay, calendar, settings, and unit tests. `npm test` and `npm run build` passed.
 - 2026-06-11: Dev server responded at `http://127.0.0.1:5173/`. Safari screenshot verification was attempted but Computer Use permissions were not granted.
+- 2026-06-11: YouTube iframe's own fullscreen does not preserve app overlays, so workout fullscreen is handled through an app-level video-stage fullscreen button.

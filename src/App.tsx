@@ -7,6 +7,8 @@ import {
   ExternalLink,
   Grip,
   ListChecks,
+  Maximize2,
+  Minimize2,
   MousePointerClick,
   Plus,
   RotateCcw,
@@ -564,6 +566,27 @@ function WorkoutView({
   canUndo
 }: WorkoutViewProps) {
   const canCompleteSet = Boolean(currentExercise) && session.phase !== "rest";
+  const videoStageRef = useRef<HTMLDivElement | null>(null);
+  const [isStageFullscreen, setIsStageFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsStageFullscreen(document.fullscreenElement === videoStageRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const handleToggleStageFullscreen = async () => {
+    if (document.fullscreenElement === videoStageRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    await videoStageRef.current?.requestFullscreen();
+  };
+
   return (
     <section className="screen workout-screen">
       <div className="section-heading">
@@ -592,9 +615,25 @@ function WorkoutView({
             외부 열기
           </a>
         )}
+        <button
+          className="icon-link"
+          type="button"
+          onClick={() => void handleToggleStageFullscreen()}
+          title="앱 전체화면"
+        >
+          {isStageFullscreen ? (
+            <Minimize2 size={17} aria-hidden="true" />
+          ) : (
+            <Maximize2 size={17} aria-hidden="true" />
+          )}
+          {isStageFullscreen ? "전체화면 종료" : "앱 전체화면"}
+        </button>
       </div>
 
-      <div className={`video-stage ${restAlert ? "rest-finished" : ""}`}>
+      <div
+        ref={videoStageRef}
+        className={`video-stage ${restAlert ? "rest-finished" : ""}`}
+      >
         {embedUrl ? (
           <iframe
             title="YouTube player"
@@ -657,6 +696,18 @@ function WorkoutView({
             title="되돌리기"
           >
             <RotateCcw size={18} aria-hidden="true" />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => void handleToggleStageFullscreen()}
+            title={isStageFullscreen ? "전체화면 종료" : "앱 전체화면"}
+          >
+            {isStageFullscreen ? (
+              <Minimize2 size={18} aria-hidden="true" />
+            ) : (
+              <Maximize2 size={18} aria-hidden="true" />
+            )}
           </button>
         </div>
       </div>
