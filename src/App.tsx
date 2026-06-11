@@ -2,20 +2,10 @@
 import {
   Activity,
   CalendarDays,
-  CheckCircle2,
   Dumbbell,
-  ExternalLink,
-  Grip,
   ListChecks,
-  Maximize2,
-  Minimize2,
-  MousePointerClick,
-  Plus,
-  RotateCcw,
-  Save,
-  Settings,
-  Trash2,
-  Volume2
+  ListVideo,
+  Settings
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -23,23 +13,22 @@ import {
   clampVolume,
   createCompletion,
   createId,
-  createSnapshot,
+  createSingleBlock,
   defaultSettings,
   emptyRoutineDays,
   finishRest,
-  formatSeconds,
   getRoutineForDate,
   getTodayKey,
   initialWorkoutSession,
+  parseClusterReps,
   setActiveRoutine,
-  toDateKey,
-  weekdayLabels,
-  weekdays
+  toDateKey
 } from "./domain/workout";
 import {
   loadAppData,
   saveCompletions,
   saveExercises,
+  savePlaylists,
   saveRoutines,
   saveSettings
 } from "./storage/db";
@@ -47,34 +36,36 @@ import type {
   AppData,
   AppSettings,
   ExerciseItem,
+  RoutineBlock,
   RoutinePreset,
+  SetSegment,
   Weekday,
-  WorkoutSessionState
+  WorkoutSessionState,
+  YoutubePlaylist
 } from "./types";
-import { isHttpUrl, toYoutubeEmbedUrl } from "./utils/youtube";
+import {
+  fetchYoutubeTitle,
+  nextPlaylistIndex,
+  previousPlaylistIndex,
+  toYoutubeEmbedUrl
+} from "./utils/youtube";
+import CalendarView from "./views/CalendarView";
+import ExerciseLibraryView, {
+  emptyExerciseForm,
+  type ExerciseForm
+} from "./views/ExerciseLibraryView";
+import PlaylistView from "./views/PlaylistView";
+import RoutineView from "./views/RoutineView";
+import SettingsView from "./views/SettingsView";
+import WorkoutView from "./views/WorkoutView";
 
-type Tab = "workout" | "exercises" | "routines" | "calendar" | "settings";
-
-type ExerciseForm = {
-  name: string;
-  weight: string;
-  targetReps: string;
-  sets: string;
-  restSeconds: string;
-};
-
-const emptyExerciseForm: ExerciseForm = {
-  name: "",
-  weight: "",
-  targetReps: "10",
-  sets: "3",
-  restSeconds: "90"
-};
+type Tab = "workout" | "exercises" | "routines" | "playlists" | "calendar" | "settings";
 
 const tabItems: Array<{ id: Tab; label: string; icon: typeof Activity }> = [
   { id: "workout", label: "운동", icon: Activity },
   { id: "exercises", label: "운동 목록", icon: Dumbbell },
   { id: "routines", label: "루틴", icon: ListChecks },
+  { id: "playlists", label: "플레이리스트", icon: ListVideo },
   { id: "calendar", label: "달력", icon: CalendarDays },
   { id: "settings", label: "설정", icon: Settings }
 ];
@@ -115,29 +106,92 @@ const playAlarm = (settings: AppSettings) => {
   oscillator.stop(context.currentTime + 0.28);
 };
 
-const normalizeExerciseForm = (form: ExerciseForm) => ({
-  name: form.name.trim(),
-  weight: form.weight.trim(),
-  targetReps: Math.max(1, Number(form.targetReps) || 1),
-  sets: Math.max(1, Number(form.sets) || 1),
-  restSeconds: Math.max(0, Number(form.restSeconds) || 0)
+type NormalizedExercise = {
+  name: string;
+  restSeconds: number;
+  segments: SetSegment[];
+};
+
+const normalizeExerciseForm = (
+  form: ExerciseForm
+): { ok: true; value: NormalizedExercise } | { ok: false; error: string } => {
+  const name = form.name.trim();
+  if (!name) {
+    return { ok: false, error: "운동명을 입력해 주세요." };
+  }
+  if (form.segments.length === 0) {
+    return { ok: false, error: "구간을 1개 이상 추가해 주세요." };
+  }
+
+  const segments: SetSegment[] = [];
+  for (const segment of form.segments) {
+    const sets = Math.max(1, Number(segment.sets) || 1);
+    if (segment.type === "normal") {
+      segments.push({
+        id: segment.id,
+        type: "normal",
+        sets,
+        weight: segment.weight.trim(),
+        reps: Math.max(1, Number(segment.reps) || 1),
+        clusterReps: [],
+        intraRestSeconds: 0
+      });
+    } else {
+      const clusterReps = parseClusterReps(segment.clusterReps);
+      if (!clusterReps) {
+        return { ok: false, error: '클러스터 횟수는 "10+8+6" 형식으로 입력해 주세요.' };
+      }
+      segments.push({
+        id: segment.id,
+        type: "cluster",
+        sets,
+        weight: segment.weight.trim(),
+        reps: 0,
+        clusterReps,
+        intraRestSeconds: Math.max(0, Number(segment.intraRestSeconds) || 0)
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    value: { name, restSeconds: Math.max(0, Number(form.restSeconds) || 0), segments }
+  };
+};
+
+const exerciseToForm = (exercise: ExerciseItem): ExerciseForm => ({
+  name: exercise.name,
+  restSeconds: String(exercise.restSeconds),
+  segments: exercise.segments.map((segment) => ({
+    id: segment.id,
+    type: segment.type,
+    sets: String(segment.sets),
+    weight: segment.weight,
+    reps: String(segment.reps || 10),
+    clusterReps: segment.clusterReps.join("+") || "10+8+6",
+    intraRestSeconds: String(segment.intraRestSeconds)
+  }))
 });
 
 function App() {
   const [tab, setTab] = useState<Tab>("workout");
   const [data, setData] = useState<AppData>({
+    version: 2,
     exercises: [],
     routines: [],
     completions: [],
+    playlists: [],
     settings: defaultSettings
   });
   const [isLoaded, setIsLoaded] = useState(false);
   const [exerciseForm, setExerciseForm] = useState<ExerciseForm>(emptyExerciseForm);
+  const [formError, setFormError] = useState("");
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [routineName, setRoutineName] = useState("");
   const [selectedRoutineId, setSelectedRoutineId] = useState<string>("");
   const [selectedDay, setSelectedDay] = useState<Weekday>(getTodayKey());
-  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState("");
+  const [videoIndex, setVideoIndex] = useState(0);
   const [session, setSession] = useState<WorkoutSessionState>(initialWorkoutSession);
   const [previousSession, setPreviousSession] = useState<WorkoutSessionState | null>(null);
   const [restAlert, setRestAlert] = useState(false);
@@ -149,6 +203,7 @@ function App() {
         setData(loaded);
         const active = loaded.routines.find((routine) => routine.isActive);
         setSelectedRoutineId(active?.id ?? loaded.routines[0]?.id ?? "");
+        setSelectedPlaylistId(loaded.playlists[0]?.id ?? "");
       })
       .finally(() => setIsLoaded(true));
   }, []);
@@ -159,8 +214,10 @@ function App() {
 
   const todayPlan = useMemo(() => getRoutineForDate(data.routines), [data.routines]);
   const selectedRoutine = data.routines.find((routine) => routine.id === selectedRoutineId) ?? null;
-  const currentExercise = todayPlan.exercises[session.exerciseIndex] ?? null;
-  const embedUrl = toYoutubeEmbedUrl(youtubeUrl);
+  const selectedPlaylist =
+    data.playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null;
+  const currentVideo = selectedPlaylist?.items[videoIndex] ?? null;
+  const embedUrl = currentVideo ? toYoutubeEmbedUrl(currentVideo.url) : "";
   const completedDates = useMemo(
     () => new Map(data.completions.filter((item) => item.completed).map((item) => [item.date, item])),
     [data.completions]
@@ -171,6 +228,14 @@ function App() {
     setPreviousSession(null);
     setRestAlert(false);
   }, [todayPlan.routine?.id, todayPlan.weekday]);
+
+  // 플레이리스트 변경/항목 삭제 시 재생 인덱스 보정
+  useEffect(() => {
+    setVideoIndex((current) => {
+      const length = selectedPlaylist?.items.length ?? 0;
+      return length === 0 ? 0 : Math.min(current, length - 1);
+    });
+  }, [selectedPlaylistId, selectedPlaylist?.items.length]);
 
   const updateExercises = (next: ExerciseItem[]) => {
     setData((current) => ({ ...current, exercises: next }));
@@ -187,56 +252,57 @@ function App() {
     void saveCompletions(next);
   };
 
+  const updatePlaylists = (next: YoutubePlaylist[]) => {
+    setData((current) => ({ ...current, playlists: next }));
+    void savePlaylists(next);
+  };
+
   const updateSettings = (next: AppSettings) => {
     setData((current) => ({ ...current, settings: next }));
     void saveSettings(next);
   };
 
+  // --- 운동 등록 ---
+
   const handleSaveExercise = () => {
     const normalized = normalizeExerciseForm(exerciseForm);
-    if (!normalized.name) {
+    if (!normalized.ok) {
+      setFormError(normalized.error);
       return;
     }
+    setFormError("");
 
     const now = new Date().toISOString();
     if (editingExerciseId) {
       updateExercises(
         data.exercises.map((exercise) =>
           exercise.id === editingExerciseId
-            ? { ...exercise, ...normalized, updatedAt: now }
+            ? { ...exercise, ...normalized.value, updatedAt: now }
             : exercise
         )
       );
     } else {
       updateExercises([
         ...data.exercises,
-        {
-          id: createId("exercise"),
-          ...normalized,
-          createdAt: now,
-          updatedAt: now
-        }
+        { id: createId("exercise"), ...normalized.value, createdAt: now, updatedAt: now }
       ]);
     }
 
-    setExerciseForm(emptyExerciseForm);
+    setExerciseForm(emptyExerciseForm());
     setEditingExerciseId(null);
   };
 
   const handleEditExercise = (exercise: ExerciseItem) => {
-    setExerciseForm({
-      name: exercise.name,
-      weight: exercise.weight,
-      targetReps: String(exercise.targetReps),
-      sets: String(exercise.sets),
-      restSeconds: String(exercise.restSeconds)
-    });
+    setExerciseForm(exerciseToForm(exercise));
     setEditingExerciseId(exercise.id);
+    setFormError("");
   };
 
   const handleDeleteExercise = (exerciseId: string) => {
     updateExercises(data.exercises.filter((exercise) => exercise.id !== exerciseId));
   };
+
+  // --- 루틴 ---
 
   const handleCreateRoutine = () => {
     const name = routineName.trim();
@@ -245,64 +311,174 @@ function App() {
     }
 
     const nextRoutine = makeRoutine(name, data.routines.length === 0);
-    const nextRoutines =
-      data.routines.length === 0 ? [nextRoutine] : [...data.routines, nextRoutine];
-    updateRoutines(nextRoutines);
+    updateRoutines(data.routines.length === 0 ? [nextRoutine] : [...data.routines, nextRoutine]);
     setSelectedRoutineId(nextRoutine.id);
     setRoutineName("");
   };
 
   const handleActivateRoutine = (routineId: string) => {
-    const next = setActiveRoutine(data.routines, routineId);
-    updateRoutines(next);
+    updateRoutines(setActiveRoutine(data.routines, routineId));
     setSelectedRoutineId(routineId);
   };
 
-  const handleAddExerciseToDay = (exerciseId: string) => {
+  const mutateSelectedDay = (
+    mutate: (blocks: RoutineBlock[]) => RoutineBlock[]
+  ) => {
     if (!selectedRoutine) {
       return;
     }
+    updateRoutines(
+      data.routines.map((routine) =>
+        routine.id === selectedRoutine.id
+          ? {
+              ...routine,
+              days: { ...routine.days, [selectedDay]: mutate(routine.days[selectedDay]) },
+              updatedAt: new Date().toISOString()
+            }
+          : routine
+      )
+    );
+  };
 
+  const handleAddSingleBlock = (exerciseId: string) => {
     const exercise = data.exercises.find((item) => item.id === exerciseId);
     if (!exercise) {
       return;
     }
-
-    const nextRoutines = data.routines.map((routine) => {
-      if (routine.id !== selectedRoutine.id) {
-        return routine;
-      }
-      const nextDay = [
-        ...routine.days[selectedDay],
-        createSnapshot(exercise, routine.days[selectedDay].length)
-      ];
-      return {
-        ...routine,
-        days: { ...routine.days, [selectedDay]: nextDay },
-        updatedAt: new Date().toISOString()
-      };
-    });
-    updateRoutines(nextRoutines);
+    mutateSelectedDay((blocks) => [...blocks, createSingleBlock(exercise, blocks.length)]);
   };
 
-  const handleRemoveSnapshot = (routineId: string, day: Weekday, snapshotId: string) => {
-    const nextRoutines = data.routines.map((routine) => {
-      if (routine.id !== routineId) {
-        return routine;
-      }
-      return {
-        ...routine,
-        days: {
-          ...routine.days,
-          [day]: routine.days[day]
-            .filter((snapshot) => snapshot.id !== snapshotId)
-            .map((snapshot, index) => ({ ...snapshot, order: index }))
-        },
-        updatedAt: new Date().toISOString()
-      };
+  const handleSaveBlock = (block: RoutineBlock) => {
+    mutateSelectedDay((blocks) => {
+      const exists = blocks.some((item) => item.id === block.id);
+      return exists
+        ? blocks.map((item) => (item.id === block.id ? { ...block, order: item.order } : item))
+        : [...blocks, { ...block, order: blocks.length }];
     });
-    updateRoutines(nextRoutines);
   };
+
+  const handleRemoveBlock = (blockId: string) => {
+    mutateSelectedDay((blocks) =>
+      blocks
+        .filter((item) => item.id !== blockId)
+        .map((item, index) => ({ ...item, order: index }))
+    );
+  };
+
+  const handleMoveBlock = (blockId: string, direction: -1 | 1) => {
+    mutateSelectedDay((blocks) => {
+      const sorted = [...blocks].sort((a, b) => a.order - b.order);
+      const index = sorted.findIndex((item) => item.id === blockId);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= sorted.length) {
+        return blocks;
+      }
+      [sorted[index], sorted[target]] = [sorted[target], sorted[index]];
+      return sorted.map((item, order) => ({ ...item, order }));
+    });
+  };
+
+  // --- 플레이리스트 ---
+
+  const handleCreatePlaylist = (name: string) => {
+    const now = new Date().toISOString();
+    const playlist: YoutubePlaylist = {
+      id: createId("playlist"),
+      name,
+      items: [],
+      createdAt: now,
+      updatedAt: now
+    };
+    updatePlaylists([...data.playlists, playlist]);
+    if (!selectedPlaylistId) {
+      setSelectedPlaylistId(playlist.id);
+    }
+  };
+
+  const mutatePlaylist = (
+    playlistId: string,
+    mutate: (playlist: YoutubePlaylist) => YoutubePlaylist
+  ) => {
+    updatePlaylists(
+      data.playlists.map((playlist) =>
+        playlist.id === playlistId
+          ? { ...mutate(playlist), updatedAt: new Date().toISOString() }
+          : playlist
+      )
+    );
+  };
+
+  const handleRenamePlaylist = (playlistId: string, name: string) => {
+    mutatePlaylist(playlistId, (playlist) => ({ ...playlist, name }));
+  };
+
+  const handleDeletePlaylist = (playlistId: string) => {
+    updatePlaylists(data.playlists.filter((playlist) => playlist.id !== playlistId));
+    if (selectedPlaylistId === playlistId) {
+      setSelectedPlaylistId("");
+      setVideoIndex(0);
+    }
+  };
+
+  const handleAddPlaylistItem = (playlistId: string, url: string) => {
+    const itemId = createId("video");
+    // 제목은 비동기로 받아오고, 그 전까지 URL을 라벨로 보여준다.
+    mutatePlaylist(playlistId, (playlist) => ({
+      ...playlist,
+      items: [...playlist.items, { id: itemId, url, label: url }]
+    }));
+
+    void fetchYoutubeTitle(url).then((label) => {
+      setData((current) => {
+        const next = current.playlists.map((playlist) =>
+          playlist.id === playlistId
+            ? {
+                ...playlist,
+                items: playlist.items.map((item) =>
+                  item.id === itemId ? { ...item, label } : item
+                )
+              }
+            : playlist
+        );
+        void savePlaylists(next);
+        return { ...current, playlists: next };
+      });
+    });
+  };
+
+  const handleRemovePlaylistItem = (playlistId: string, itemId: string) => {
+    mutatePlaylist(playlistId, (playlist) => ({
+      ...playlist,
+      items: playlist.items.filter((item) => item.id !== itemId)
+    }));
+  };
+
+  const handleMovePlaylistItem = (playlistId: string, itemId: string, direction: -1 | 1) => {
+    mutatePlaylist(playlistId, (playlist) => {
+      const index = playlist.items.findIndex((item) => item.id === itemId);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= playlist.items.length) {
+        return playlist;
+      }
+      const items = [...playlist.items];
+      [items[index], items[target]] = [items[target], items[index]];
+      return { ...playlist, items };
+    });
+  };
+
+  const handleNextVideo = () => {
+    if (selectedPlaylist && selectedPlaylist.items.length > 0) {
+      setVideoIndex(nextPlaylistIndex(selectedPlaylist.items.length, videoIndex));
+    }
+  };
+
+  const handlePreviousVideo = () => {
+    if (selectedPlaylist && selectedPlaylist.items.length > 0) {
+      setVideoIndex(previousPlaylistIndex(selectedPlaylist.items.length, videoIndex));
+    }
+  };
+
+  // --- 운동 진행 ---
 
   const completeWorkoutForToday = useCallback(() => {
     if (!todayPlan.routine) {
@@ -310,27 +486,27 @@ function App() {
     }
 
     const completion = createCompletion(todayPlan.routine.id);
-    const next = [
+    updateCompletions([
       ...data.completions.filter((item) => item.date !== completion.date),
       completion
-    ];
-    updateCompletions(next);
+    ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.completions, todayPlan.routine]);
 
   const handleSetComplete = useCallback(() => {
-    if (!todayPlan.routine || todayPlan.exercises.length === 0 || session.phase === "rest") {
+    if (!todayPlan.routine || todayPlan.blocks.length === 0 || session.phase !== "ready") {
       return;
     }
 
     setPreviousSession(session);
-    const result = advanceSet(session, todayPlan.exercises);
+    const result = advanceSet(session, todayPlan.blocks);
     setSession(result.state);
     setRestAlert(false);
 
     if (result.completedWorkout) {
       completeWorkoutForToday();
     }
-  }, [completeWorkoutForToday, session, todayPlan.exercises, todayPlan.routine]);
+  }, [completeWorkoutForToday, session, todayPlan.blocks, todayPlan.routine]);
 
   const handleUndo = () => {
     if (!previousSession) {
@@ -465,13 +641,19 @@ function App() {
       <main className="main-surface">
         {tab === "workout" && (
           <WorkoutView
-            youtubeUrl={youtubeUrl}
-            setYoutubeUrl={setYoutubeUrl}
+            playlists={data.playlists}
+            selectedPlaylistId={selectedPlaylistId}
+            onSelectPlaylist={(playlistId) => {
+              setSelectedPlaylistId(playlistId);
+              setVideoIndex(0);
+            }}
+            videoIndex={videoIndex}
+            onNextVideo={handleNextVideo}
+            onPreviousVideo={handlePreviousVideo}
             embedUrl={embedUrl}
             routineName={todayPlan.routine?.name ?? ""}
             weekday={todayPlan.weekday}
-            exercises={todayPlan.exercises}
-            currentExercise={currentExercise}
+            blocks={todayPlan.blocks}
             session={session}
             settings={data.settings}
             restAlert={restAlert}
@@ -488,13 +670,15 @@ function App() {
             exercises={data.exercises}
             form={exerciseForm}
             editingExerciseId={editingExerciseId}
+            formError={formError}
             onFormChange={setExerciseForm}
             onSave={handleSaveExercise}
             onEdit={handleEditExercise}
             onDelete={handleDeleteExercise}
             onCancelEdit={() => {
-              setExerciseForm(emptyExerciseForm);
+              setExerciseForm(emptyExerciseForm());
               setEditingExerciseId(null);
+              setFormError("");
             }}
           />
         )}
@@ -512,8 +696,22 @@ function App() {
             onSelectRoutine={setSelectedRoutineId}
             onActivateRoutine={handleActivateRoutine}
             onSelectedDayChange={setSelectedDay}
-            onAddExercise={handleAddExerciseToDay}
-            onRemoveSnapshot={handleRemoveSnapshot}
+            onAddSingleBlock={handleAddSingleBlock}
+            onSaveBlock={handleSaveBlock}
+            onRemoveBlock={handleRemoveBlock}
+            onMoveBlock={handleMoveBlock}
+          />
+        )}
+
+        {tab === "playlists" && (
+          <PlaylistView
+            playlists={data.playlists}
+            onCreate={handleCreatePlaylist}
+            onRename={handleRenamePlaylist}
+            onDelete={handleDeletePlaylist}
+            onAddItem={handleAddPlaylistItem}
+            onRemoveItem={handleRemovePlaylistItem}
+            onMoveItem={handleMovePlaylistItem}
           />
         )}
 
@@ -527,613 +725,6 @@ function App() {
         )}
       </main>
     </div>
-  );
-}
-
-type WorkoutViewProps = {
-  youtubeUrl: string;
-  setYoutubeUrl: (value: string) => void;
-  embedUrl: string;
-  routineName: string;
-  weekday: Weekday;
-  exercises: ReturnType<typeof getRoutineForDate>["exercises"];
-  currentExercise: ReturnType<typeof getRoutineForDate>["exercises"][number] | null;
-  session: WorkoutSessionState;
-  settings: AppSettings;
-  restAlert: boolean;
-  hasCompletion: boolean;
-  onSetComplete: () => void;
-  onUndo: () => void;
-  onDragStart: (event: React.PointerEvent<HTMLButtonElement>) => void;
-  canUndo: boolean;
-};
-
-function WorkoutView({
-  youtubeUrl,
-  setYoutubeUrl,
-  embedUrl,
-  routineName,
-  weekday,
-  exercises,
-  currentExercise,
-  session,
-  settings,
-  restAlert,
-  hasCompletion,
-  onSetComplete,
-  onUndo,
-  onDragStart,
-  canUndo
-}: WorkoutViewProps) {
-  const canCompleteSet = Boolean(currentExercise) && session.phase !== "rest";
-  const videoStageRef = useRef<HTMLDivElement | null>(null);
-  const [isStageFullscreen, setIsStageFullscreen] = useState(false);
-
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      setIsStageFullscreen(document.fullscreenElement === videoStageRef.current);
-    };
-
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
-  }, []);
-
-  const handleToggleStageFullscreen = async () => {
-    if (document.fullscreenElement === videoStageRef.current) {
-      await document.exitFullscreen();
-      return;
-    }
-
-    await videoStageRef.current?.requestFullscreen();
-  };
-
-  return (
-    <section className="screen workout-screen">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">{weekdayLabels[weekday]}요일</p>
-          <h2>{routineName || "활성 루틴 없음"}</h2>
-        </div>
-        {hasCompletion && (
-          <span className="status-pill done">
-            <CheckCircle2 size={16} aria-hidden="true" />
-            완료
-          </span>
-        )}
-      </div>
-
-      <div className="youtube-toolbar">
-        <input
-          value={youtubeUrl}
-          onChange={(event) => setYoutubeUrl(event.target.value)}
-          placeholder="YouTube URL"
-          aria-label="YouTube URL"
-        />
-        {isHttpUrl(youtubeUrl) && (
-          <a className="icon-link" href={youtubeUrl} target="_blank" rel="noreferrer">
-            <ExternalLink size={17} aria-hidden="true" />
-            외부 열기
-          </a>
-        )}
-        <button
-          className="icon-link"
-          type="button"
-          onClick={() => void handleToggleStageFullscreen()}
-          title="앱 전체화면"
-        >
-          {isStageFullscreen ? (
-            <Minimize2 size={17} aria-hidden="true" />
-          ) : (
-            <Maximize2 size={17} aria-hidden="true" />
-          )}
-          {isStageFullscreen ? "전체화면 종료" : "앱 전체화면"}
-        </button>
-      </div>
-
-      <div
-        ref={videoStageRef}
-        className={`video-stage ${restAlert ? "rest-finished" : ""}`}
-      >
-        {embedUrl ? (
-          <iframe
-            title="YouTube player"
-            src={embedUrl}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        ) : (
-          <div className="video-placeholder">
-            <Activity size={48} aria-hidden="true" />
-            <span>YouTube</span>
-          </div>
-        )}
-
-        <div
-          className="floating-control"
-          style={{
-            transform: `translate(${settings.floatingControlPosition.x}px, ${settings.floatingControlPosition.y}px)`
-          }}
-        >
-          <button
-            className="drag-handle"
-            type="button"
-            onPointerDown={onDragStart}
-            title="위치 이동"
-          >
-            <Grip size={18} aria-hidden="true" />
-          </button>
-          <div className="floating-main">
-            <span className="floating-label">
-              {session.phase === "rest" ? "휴식" : session.phase === "complete" ? "완료" : "진행"}
-            </span>
-            <strong>{currentExercise?.name ?? "오늘 운동 없음"}</strong>
-            <span>
-              {currentExercise
-                ? `${currentExercise.weight || "무게 미입력"} · ${currentExercise.targetReps}회 · ${
-                    session.completedSets
-                  }/${currentExercise.sets}세트`
-                : "루틴을 준비해 주세요"}
-            </span>
-          </div>
-          <div className="timer-box">
-            {session.phase === "rest" ? formatSeconds(session.remainingRestSeconds) : "--:--"}
-          </div>
-          <button
-            className="primary-action"
-            type="button"
-            onClick={onSetComplete}
-            disabled={!canCompleteSet}
-            title="세트 완료"
-          >
-            <MousePointerClick size={18} aria-hidden="true" />
-            세트 완료
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onUndo}
-            disabled={!canUndo}
-            title="되돌리기"
-          >
-            <RotateCcw size={18} aria-hidden="true" />
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={() => void handleToggleStageFullscreen()}
-            title={isStageFullscreen ? "전체화면 종료" : "앱 전체화면"}
-          >
-            {isStageFullscreen ? (
-              <Minimize2 size={18} aria-hidden="true" />
-            ) : (
-              <Maximize2 size={18} aria-hidden="true" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      <div className="workout-list">
-        {exercises.length === 0 ? (
-          <p className="empty-state">오늘 루틴 없음</p>
-        ) : (
-          exercises.map((exercise, index) => (
-            <div
-              key={exercise.id}
-              className={`workout-row ${index === session.exerciseIndex ? "current" : ""}`}
-            >
-              <span className="order-badge">{index + 1}</span>
-              <div>
-                <strong>{exercise.name}</strong>
-                <span>
-                  {exercise.weight || "무게 미입력"} · {exercise.targetReps}회 · {exercise.sets}세트 · 휴식{" "}
-                  {formatSeconds(exercise.restSeconds)}
-                </span>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </section>
-  );
-}
-
-type ExerciseLibraryProps = {
-  exercises: ExerciseItem[];
-  form: ExerciseForm;
-  editingExerciseId: string | null;
-  onFormChange: (form: ExerciseForm) => void;
-  onSave: () => void;
-  onEdit: (exercise: ExerciseItem) => void;
-  onDelete: (exerciseId: string) => void;
-  onCancelEdit: () => void;
-};
-
-function ExerciseLibraryView({
-  exercises,
-  form,
-  editingExerciseId,
-  onFormChange,
-  onSave,
-  onEdit,
-  onDelete,
-  onCancelEdit
-}: ExerciseLibraryProps) {
-  return (
-    <section className="screen">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Library</p>
-          <h2>운동 목록</h2>
-        </div>
-      </div>
-
-      <div className="editor-grid">
-        <div className="panel">
-          <h3>{editingExerciseId ? "운동 수정" : "운동 추가"}</h3>
-          <div className="form-grid">
-            <label>
-              운동명
-              <input
-                value={form.name}
-                onChange={(event) => onFormChange({ ...form, name: event.target.value })}
-              />
-            </label>
-            <label>
-              무게
-              <input
-                value={form.weight}
-                onChange={(event) => onFormChange({ ...form, weight: event.target.value })}
-                placeholder="60kg"
-              />
-            </label>
-            <label>
-              횟수
-              <input
-                type="number"
-                min="1"
-                value={form.targetReps}
-                onChange={(event) => onFormChange({ ...form, targetReps: event.target.value })}
-              />
-            </label>
-            <label>
-              세트
-              <input
-                type="number"
-                min="1"
-                value={form.sets}
-                onChange={(event) => onFormChange({ ...form, sets: event.target.value })}
-              />
-            </label>
-            <label>
-              휴식초
-              <input
-                type="number"
-                min="0"
-                value={form.restSeconds}
-                onChange={(event) => onFormChange({ ...form, restSeconds: event.target.value })}
-              />
-            </label>
-          </div>
-          <div className="button-row">
-            <button className="command-button" type="button" onClick={onSave}>
-              <Save size={17} aria-hidden="true" />
-              저장
-            </button>
-            {editingExerciseId && (
-              <button className="ghost-button" type="button" onClick={onCancelEdit}>
-                취소
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="panel">
-          <h3>목록</h3>
-          <div className="item-list">
-            {exercises.length === 0 ? (
-              <p className="empty-state">운동 없음</p>
-            ) : (
-              exercises.map((exercise) => (
-                <div className="list-item" key={exercise.id}>
-                  <div>
-                    <strong>{exercise.name}</strong>
-                    <span>
-                      {exercise.weight || "무게 미입력"} · {exercise.targetReps}회 · {exercise.sets}세트 · 휴식{" "}
-                      {formatSeconds(exercise.restSeconds)}
-                    </span>
-                  </div>
-                  <div className="item-actions">
-                    <button type="button" className="ghost-button" onClick={() => onEdit(exercise)}>
-                      수정
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button danger"
-                      onClick={() => onDelete(exercise.id)}
-                      title="삭제"
-                    >
-                      <Trash2 size={17} aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-type RoutineViewProps = {
-  routines: RoutinePreset[];
-  exercises: ExerciseItem[];
-  selectedRoutine: RoutinePreset | null;
-  selectedRoutineId: string;
-  selectedDay: Weekday;
-  routineName: string;
-  onRoutineNameChange: (value: string) => void;
-  onCreateRoutine: () => void;
-  onSelectRoutine: (routineId: string) => void;
-  onActivateRoutine: (routineId: string) => void;
-  onSelectedDayChange: (day: Weekday) => void;
-  onAddExercise: (exerciseId: string) => void;
-  onRemoveSnapshot: (routineId: string, day: Weekday, snapshotId: string) => void;
-};
-
-function RoutineView({
-  routines,
-  exercises,
-  selectedRoutine,
-  selectedRoutineId,
-  selectedDay,
-  routineName,
-  onRoutineNameChange,
-  onCreateRoutine,
-  onSelectRoutine,
-  onActivateRoutine,
-  onSelectedDayChange,
-  onAddExercise,
-  onRemoveSnapshot
-}: RoutineViewProps) {
-  return (
-    <section className="screen">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Preset</p>
-          <h2>루틴</h2>
-        </div>
-      </div>
-
-      <div className="routine-layout">
-        <div className="panel">
-          <h3>루틴 그룹</h3>
-          <div className="inline-form">
-            <input
-              value={routineName}
-              onChange={(event) => onRoutineNameChange(event.target.value)}
-              placeholder="루틴 이름"
-            />
-            <button className="command-button" type="button" onClick={onCreateRoutine}>
-              <Plus size={17} aria-hidden="true" />
-              추가
-            </button>
-          </div>
-
-          <div className="item-list compact">
-            {routines.map((routine) => (
-              <button
-                key={routine.id}
-                type="button"
-                className={`routine-choice ${selectedRoutineId === routine.id ? "active" : ""}`}
-                onClick={() => onSelectRoutine(routine.id)}
-              >
-                <span>{routine.name}</span>
-                {routine.isActive && <em>활성</em>}
-              </button>
-            ))}
-          </div>
-
-          {selectedRoutine && !selectedRoutine.isActive && (
-            <button
-              className="command-button wide"
-              type="button"
-              onClick={() => onActivateRoutine(selectedRoutine.id)}
-            >
-              <CheckCircle2 size={17} aria-hidden="true" />
-              활성화
-            </button>
-          )}
-        </div>
-
-        <div className="panel routine-editor">
-          <div className="weekday-tabs" role="tablist" aria-label="요일">
-            {weekdays.map((day) => (
-              <button
-                key={day}
-                type="button"
-                className={selectedDay === day ? "active" : ""}
-                onClick={() => onSelectedDayChange(day)}
-              >
-                {weekdayLabels[day]}
-              </button>
-            ))}
-          </div>
-
-          {selectedRoutine ? (
-            <>
-              <div className="inline-form">
-                <select
-                  aria-label="운동 선택"
-                  onChange={(event) => {
-                    if (event.target.value) {
-                      onAddExercise(event.target.value);
-                      event.target.value = "";
-                    }
-                  }}
-                  defaultValue=""
-                >
-                  <option value="">운동 선택</option>
-                  {exercises.map((exercise) => (
-                    <option key={exercise.id} value={exercise.id}>
-                      {exercise.name} · {exercise.weight || "무게 미입력"} · {exercise.targetReps}회
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="item-list">
-                {selectedRoutine.days[selectedDay].length === 0 ? (
-                  <p className="empty-state">배치된 운동 없음</p>
-                ) : (
-                  selectedRoutine.days[selectedDay].map((snapshot, index) => (
-                    <div className="list-item" key={snapshot.id}>
-                      <span className="order-badge">{index + 1}</span>
-                      <div>
-                        <strong>{snapshot.name}</strong>
-                        <span>
-                          {snapshot.weight || "무게 미입력"} · {snapshot.targetReps}회 · {snapshot.sets}세트 ·
-                          휴식 {formatSeconds(snapshot.restSeconds)}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="icon-button danger"
-                        onClick={() =>
-                          onRemoveSnapshot(selectedRoutine.id, selectedDay, snapshot.id)
-                        }
-                        title="삭제"
-                      >
-                        <Trash2 size={17} aria-hidden="true" />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </>
-          ) : (
-            <p className="empty-state">루틴 없음</p>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function CalendarView({ completions }: { completions: Map<string, unknown> }) {
-  const today = new Date();
-  const first = new Date(today.getFullYear(), today.getMonth(), 1);
-  const startOffset = (first.getDay() + 6) % 7;
-  const totalDays = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  const cells = Array.from({ length: startOffset + totalDays }, (_, index) => {
-    const dayNumber = index - startOffset + 1;
-    return dayNumber > 0 ? dayNumber : null;
-  });
-
-  return (
-    <section className="screen">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Calendar</p>
-          <h2>
-            {today.getFullYear()}년 {today.getMonth() + 1}월
-          </h2>
-        </div>
-      </div>
-
-      <div className="calendar-grid weekday-header">
-        {weekdays.map((day) => (
-          <span key={day}>{weekdayLabels[day]}</span>
-        ))}
-      </div>
-      <div className="calendar-grid">
-        {cells.map((day, index) => {
-          if (!day) {
-            return <div className="calendar-cell empty" key={`empty-${index}`} />;
-          }
-          const date = new Date(today.getFullYear(), today.getMonth(), day);
-          const key = toDateKey(date);
-          const done = completions.has(key);
-          return (
-            <div className={`calendar-cell ${done ? "done" : ""}`} key={key}>
-              <span>{day}</span>
-              {done && <CheckCircle2 size={18} aria-hidden="true" />}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function SettingsView({
-  settings,
-  onChange
-}: {
-  settings: AppSettings;
-  onChange: (settings: AppSettings) => void;
-}) {
-  return (
-    <section className="screen">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Preferences</p>
-          <h2>설정</h2>
-        </div>
-      </div>
-
-      <div className="panel settings-panel">
-        <label className="range-row">
-          <span>
-            <Volume2 size={18} aria-hidden="true" />
-            알람 볼륨
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={settings.alarmVolume}
-            onChange={(event) =>
-              onChange({ ...settings, alarmVolume: clampVolume(Number(event.target.value)) })
-            }
-          />
-          <strong>{settings.alarmVolume}</strong>
-        </label>
-
-        <label className="toggle-row">
-          <input
-            type="checkbox"
-            checked={settings.restEndSoundEnabled}
-            onChange={(event) =>
-              onChange({ ...settings, restEndSoundEnabled: event.target.checked })
-            }
-          />
-          휴식 종료 소리
-        </label>
-
-        <label className="toggle-row">
-          <input
-            type="checkbox"
-            checked={settings.restEndVisualAlertEnabled}
-            onChange={(event) =>
-              onChange({ ...settings, restEndVisualAlertEnabled: event.target.checked })
-            }
-          />
-          휴식 종료 화면 강조
-        </label>
-
-        <label className="toggle-row">
-          <input
-            type="checkbox"
-            checked={settings.keyboardShortcutEnabled}
-            onChange={(event) =>
-              onChange({ ...settings, keyboardShortcutEnabled: event.target.checked })
-            }
-          />
-          단축키 보조 입력
-        </label>
-      </div>
-    </section>
   );
 }
 
