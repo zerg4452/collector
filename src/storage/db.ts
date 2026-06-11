@@ -4,17 +4,25 @@ import type {
   AppSettings,
   ExerciseItem,
   RoutinePreset,
-  WorkoutCompletion
+  WorkoutCompletion,
+  YoutubePlaylist
 } from "../types";
 import { defaultSettings } from "../domain/workout";
+import {
+  CURRENT_DATA_VERSION,
+  migrateExercise,
+  migrateRoutine,
+  needsMigration
+} from "../domain/migration";
 
 const DB_NAME = "collector-workout-companion";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const stores = {
   exercises: "exercises",
   routines: "routines",
   completions: "completions",
+  playlists: "playlists",
   settings: "settings"
 } as const;
 
@@ -26,7 +34,7 @@ const openDb = () =>
       const db = request.result;
       Object.values(stores).forEach((storeName) => {
         if (!db.objectStoreNames.contains(storeName)) {
-          db.createObjectStore(storeName, { keyPath: storeName === "settings" ? "id" : "id" });
+          db.createObjectStore(storeName, { keyPath: "id" });
         }
       });
     };
@@ -105,12 +113,24 @@ const putOne = async <T>(storeName: string, value: T) => {
 };
 
 export const loadAppData = async (): Promise<AppData> => {
-  const [exercises, routines, completions, storedSettings] = await Promise.all([
+  const [rawExercises, rawRoutines, completions, playlists, storedSettings] = await Promise.all([
     getAll<ExerciseItem>(stores.exercises),
     getAll<RoutinePreset>(stores.routines),
     getAll<WorkoutCompletion>(stores.completions),
+    getAll<YoutubePlaylist>(stores.playlists),
     getOne<AppSettings & { id: string }>(stores.settings, "app-settings")
   ]);
+
+  const exercises = rawExercises.map(migrateExercise);
+  const routines = rawRoutines.map(migrateRoutine);
+
+  // v1 데이터는 변환 결과를 즉시 저장해 다음 로드부터 v2로 읽는다.
+  if (needsMigration(rawExercises, rawRoutines)) {
+    await Promise.all([
+      putAll(stores.exercises, exercises),
+      putAll(stores.routines, routines)
+    ]);
+  }
 
   const settings = storedSettings
     ? {
@@ -122,7 +142,14 @@ export const loadAppData = async (): Promise<AppData> => {
       }
     : defaultSettings;
 
-  return { exercises, routines, completions, settings };
+  return {
+    version: CURRENT_DATA_VERSION,
+    exercises,
+    routines,
+    completions,
+    playlists,
+    settings
+  };
 };
 
 export const saveExercises = (exercises: ExerciseItem[]) =>
@@ -132,6 +159,9 @@ export const saveRoutines = (routines: RoutinePreset[]) => putAll(stores.routine
 
 export const saveCompletions = (completions: WorkoutCompletion[]) =>
   putAll(stores.completions, completions);
+
+export const savePlaylists = (playlists: YoutubePlaylist[]) =>
+  putAll(stores.playlists, playlists);
 
 export const saveSettings = (settings: AppSettings) =>
   putOne(stores.settings, { id: "app-settings", ...settings });
