@@ -1,23 +1,49 @@
 // 운동 진행 도메인 규칙을 검증한다.
 import { describe, expect, it } from "vitest";
-import type { ExerciseItem, RoutinePreset } from "../types";
+import type { ExerciseItem, RoutineBlock, RoutinePreset, SetSegment } from "../types";
 import {
   advanceSet,
-  createSnapshot,
+  createBlockExercise,
+  createMultiBlock,
+  createSingleBlock,
   emptyRoutineDays,
   finishRest,
+  flattenPrescriptions,
   getRoutineForDate,
   initialWorkoutSession,
-  setActiveRoutine
+  parseClusterReps,
+  prescriptionForRound,
+  setActiveRoutine,
+  totalSets
 } from "./workout";
+
+const normalSegment = (overrides: Partial<SetSegment> = {}): SetSegment => ({
+  id: "segment-normal",
+  type: "normal",
+  sets: 3,
+  weight: "25kg",
+  reps: 12,
+  clusterReps: [],
+  intraRestSeconds: 0,
+  ...overrides
+});
+
+const clusterSegment = (overrides: Partial<SetSegment> = {}): SetSegment => ({
+  id: "segment-cluster",
+  type: "cluster",
+  sets: 2,
+  weight: "20kg",
+  reps: 0,
+  clusterReps: [10, 8, 6],
+  intraRestSeconds: 5,
+  ...overrides
+});
 
 const exercise = (overrides: Partial<ExerciseItem> = {}): ExerciseItem => ({
   id: "exercise-1",
-  name: "벤치프레스",
-  weight: "60kg",
-  targetReps: 5,
-  sets: 2,
-  restSeconds: 90,
+  name: "바벨 컬",
+  segments: [normalSegment()],
+  restSeconds: 60,
   createdAt: "2026-06-11T00:00:00.000Z",
   updatedAt: "2026-06-11T00:00:00.000Z",
   ...overrides
@@ -33,20 +59,64 @@ const routine = (overrides: Partial<RoutinePreset> = {}): RoutinePreset => ({
   ...overrides
 });
 
-describe("workout domain", () => {
-  it("copies exercise data into a routine snapshot", () => {
-    const source = exercise();
-    const snapshot = createSnapshot(source, 0);
+describe("segments", () => {
+  it("flattens segments into per-set prescriptions in order", () => {
+    const all = flattenPrescriptions([normalSegment(), clusterSegment()]);
 
-    expect(snapshot.sourceExerciseId).toBe(source.id);
-    expect(snapshot.name).toBe("벤치프레스");
-    expect(snapshot.weight).toBe("60kg");
-    expect(snapshot.targetReps).toBe(5);
-    expect(snapshot.sets).toBe(2);
-    expect(snapshot.restSeconds).toBe(90);
-    expect(snapshot).not.toBe(source);
+    expect(all).toHaveLength(5);
+    expect(all[0]).toEqual({ type: "normal", weight: "25kg", reps: 12 });
+    expect(all[3]).toEqual({
+      type: "cluster",
+      weight: "20kg",
+      clusterReps: [10, 8, 6],
+      intraRestSeconds: 5
+    });
   });
 
+  it("maps a round to its prescription and repeats the last one beyond range", () => {
+    const segments = [normalSegment(), clusterSegment()];
+
+    expect(prescriptionForRound(segments, 1)?.type).toBe("normal");
+    expect(prescriptionForRound(segments, 4)?.type).toBe("cluster");
+    expect(prescriptionForRound(segments, 99)?.type).toBe("cluster");
+    expect(prescriptionForRound([], 1)).toBeNull();
+  });
+
+  it("counts total sets across segments", () => {
+    expect(totalSets([normalSegment(), clusterSegment()])).toBe(5);
+  });
+
+  it("parses cluster reps text and rejects bad input", () => {
+    expect(parseClusterReps("10+8+6")).toEqual([10, 8, 6]);
+    expect(parseClusterReps(" 10 + 8 ")).toEqual([10, 8]);
+    expect(parseClusterReps("10+a")).toBeNull();
+    expect(parseClusterReps("10+")).toBeNull();
+    expect(parseClusterReps("")).toBeNull();
+  });
+});
+
+describe("blocks", () => {
+  it("creates a single block with rounds derived from total sets", () => {
+    const block = createSingleBlock(exercise({ segments: [normalSegment(), clusterSegment()] }));
+
+    expect(block.exercises).toHaveLength(1);
+    expect(block.rounds).toBe(5);
+    expect(block.restSeconds).toBe(60);
+    expect(block.exercises[0].sourceExerciseId).toBe("exercise-1");
+  });
+
+  it("creates a multi block with explicit rounds and rest", () => {
+    const first = createBlockExercise(exercise({ id: "exercise-1", name: "라잉 트라이셉스" }), 0);
+    const second = createBlockExercise(exercise({ id: "exercise-2", name: "V업" }), 1);
+    const block = createMultiBlock([first, second], 3, 30);
+
+    expect(block.exercises.map((item) => item.name)).toEqual(["라잉 트라이셉스", "V업"]);
+    expect(block.rounds).toBe(3);
+    expect(block.restSeconds).toBe(30);
+  });
+});
+
+describe("routine plan", () => {
   it("keeps only one active routine", () => {
     const routines = [
       routine({ id: "routine-1", isActive: true }),
@@ -59,37 +129,91 @@ describe("workout domain", () => {
     expect(next.find((item) => item.id === "routine-2")?.isActive).toBe(true);
   });
 
-  it("loads exercises for the active routine weekday", () => {
-    const snapshot = createSnapshot(exercise(), 0);
+  it("loads blocks for the active routine weekday and skips empty blocks", () => {
+    const block = createSingleBlock(exercise());
+    const emptyBlock: RoutineBlock = {
+      id: "block-empty",
+      exercises: [],
+      rounds: 1,
+      restSeconds: 0,
+      order: 1
+    };
     const active = routine({
       isActive: true,
-      days: { ...emptyRoutineDays(), thursday: [snapshot] }
+      days: { ...emptyRoutineDays(), thursday: [block, emptyBlock] }
     });
 
     const plan = getRoutineForDate([active], new Date("2026-06-11T12:00:00+09:00"));
 
     expect(plan.weekday).toBe("thursday");
-    expect(plan.exercises).toHaveLength(1);
-    expect(plan.exercises[0].name).toBe("벤치프레스");
+    expect(plan.blocks).toHaveLength(1);
+    expect(plan.blocks[0].exercises[0].name).toBe("바벨 컬");
+  });
+});
+
+describe("workout session", () => {
+  const multiBlock = () =>
+    createMultiBlock(
+      [
+        createBlockExercise(exercise({ id: "exercise-1", name: "라잉 트라이셉스" }), 0),
+        createBlockExercise(exercise({ id: "exercise-2", name: "V업" }), 1)
+      ],
+      2,
+      30
+    );
+
+  it("moves to the next exercise in a block without rest", () => {
+    const result = advanceSet(initialWorkoutSession(), [multiBlock()]);
+
+    expect(result.state.phase).toBe("ready");
+    expect(result.state.exerciseIndex).toBe(1);
+    expect(result.state.round).toBe(1);
+    expect(result.restSourceSeconds).toBe(0);
   });
 
-  it("advances a set into rest and then ready state", () => {
-    const snapshot = createSnapshot(exercise({ sets: 2, restSeconds: 45 }), 0);
-    const result = advanceSet(initialWorkoutSession(), [snapshot]);
+  it("rests between rounds and resumes at the first exercise", () => {
+    const blocks = [multiBlock()];
+    const afterFirst = advanceSet(initialWorkoutSession(), blocks);
+    const afterRound = advanceSet(afterFirst.state, blocks);
 
-    expect(result.completedWorkout).toBe(false);
+    expect(afterRound.state.phase).toBe("rest");
+    expect(afterRound.state.remainingRestSeconds).toBe(30);
+    expect(afterRound.state.round).toBe(2);
+    expect(afterRound.state.exerciseIndex).toBe(0);
+
+    const resumed = finishRest(afterRound.state);
+    expect(resumed.phase).toBe("ready");
+    expect(resumed.remainingRestSeconds).toBe(0);
+  });
+
+  it("rests between blocks using the finished block's rest", () => {
+    const single = createSingleBlock(
+      exercise({ segments: [normalSegment({ sets: 1 })], restSeconds: 90 })
+    );
+    const blocks = [single, createSingleBlock(exercise({ id: "exercise-2" }))];
+
+    const result = advanceSet(initialWorkoutSession(), blocks);
+
     expect(result.state.phase).toBe("rest");
-    expect(result.state.completedSets).toBe(1);
-    expect(result.state.remainingRestSeconds).toBe(45);
-    expect(finishRest(result.state).phase).toBe("ready");
+    expect(result.state.remainingRestSeconds).toBe(90);
+    expect(result.state.blockIndex).toBe(1);
+    expect(result.state.round).toBe(1);
+    expect(result.state.exerciseIndex).toBe(0);
+    expect(result.completedWorkout).toBe(false);
   });
 
-  it("marks the workout complete after the last set", () => {
-    const snapshot = createSnapshot(exercise({ sets: 1 }), 0);
-    const result = advanceSet(initialWorkoutSession(), [snapshot]);
+  it("completes the workout after the last block's last round", () => {
+    const single = createSingleBlock(exercise({ segments: [normalSegment({ sets: 1 })] }));
+
+    const result = advanceSet(initialWorkoutSession(), [single]);
 
     expect(result.completedWorkout).toBe(true);
     expect(result.state.phase).toBe("complete");
-    expect(result.state.completedSets).toBe(1);
+  });
+
+  it("ignores advance during rest or with no blocks", () => {
+    const resting = { ...initialWorkoutSession(), phase: "rest" as const };
+    expect(advanceSet(resting, [multiBlock()]).state).toEqual(resting);
+    expect(advanceSet(initialWorkoutSession(), []).completedWorkout).toBe(false);
   });
 });
