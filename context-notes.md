@@ -18,3 +18,7 @@
 - 2026-06-09: Approved product approach is Node-based web UI first, designed so it can be packaged as a Mac desktop app with Electron later.
 - 2026-06-09: User approved product structure, screens, data model, local storage scope, and first-version exception handling.
 - 2026-06-09: User reviewed the written design spec and approved pushing it.
+- 2026-06-11: User asked to proceed from the reviewed design spec. Work moved to branch `codex/workout-companion-mvp`.
+- 2026-06-11: Implementation plan created for a Vite React TypeScript MVP with IndexedDB local storage.
+- 2026-06-11: Implemented Vite React app with local IndexedDB storage, routine editing, exercise library, workout overlay, calendar, settings, and unit tests. `npm test` and `npm run build` passed.
+- 2026-06-11: Dev server responded at `http://127.0.0.1:5173/`. Safari screenshot verification was attempted but Computer Use permissions were not granted.

@@ -11,4 +11,10 @@
 - [x] Write and commit design spec.
 - [x] Self-review design spec.
 - [x] Ask user to review written spec.
-- [ ] Transition to implementation planning.
+- [x] Transition to implementation planning.
+- [x] Scaffold Vite React app.
+- [x] Implement data model and IndexedDB store.
+- [x] Implement workout, exercise, routine, calendar, and settings screens.
+- [x] Add core tests.
+- [x] Run tests and build.
+- [x] Commit MVP implementation.

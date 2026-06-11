@@ -1,1 +1,5 @@
 .superpowers/
+.npm-cache/
+node_modules/
+dist/
+*.tsbuildinfo
