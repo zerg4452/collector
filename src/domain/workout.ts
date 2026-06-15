@@ -47,7 +47,7 @@ export const defaultSettings: AppSettings = {
   restEndVisualAlertEnabled: true,
   floatingControlPosition: { x: 24, y: 24 },
   keyboardShortcutEnabled: true,
-  routineTabEnabled: true
+  routineMode: "routine"
 };
 
 export const createId = (prefix: string) =>
@@ -203,6 +203,27 @@ export const getRoutineForDate = (routines: RoutinePreset[], date = new Date()) 
 };
 
 // --- 진행 엔진 ---
+
+export type TimerState = { remaining: number; duration: number | null };
+
+export const initialTimerState = (): TimerState => ({ remaining: 0, duration: null });
+
+// 같은 값이 도는 중이면 취소, 아니면 그 값으로 시작한다.
+export const toggleTimer = (state: TimerState, seconds: number): TimerState =>
+  state.duration === seconds && state.remaining > 0
+    ? { remaining: 0, duration: null }
+    : { remaining: seconds, duration: seconds };
+
+// 1초 감소. 1초 이하면 정지하고 알람 신호(finished)를 낸다.
+export const tickTimer = (
+  state: TimerState
+): { state: TimerState; finished: boolean } =>
+  state.remaining <= 1
+    ? { state: { remaining: 0, duration: null }, finished: true }
+    : {
+        state: { remaining: state.remaining - 1, duration: state.duration },
+        finished: false
+      };
 
 export const initialWorkoutSession = (): WorkoutSessionState => ({
   blockIndex: 0,

@@ -1,4 +1,6 @@
 // 운동 루틴과 로컬 저장 데이터의 타입을 정의한다.
+export type RoutineMode = "off" | "routine" | "timer";
+
 export type Weekday =
   | "monday"
   | "tuesday"
@@ -89,7 +91,7 @@ export type AppSettings = {
   restEndVisualAlertEnabled: boolean;
   floatingControlPosition: FloatingControlPosition;
   keyboardShortcutEnabled: boolean;
-  routineTabEnabled: boolean;
+  routineMode: RoutineMode;
 };
 
 export type WorkoutPhase = "ready" | "rest" | "complete";
