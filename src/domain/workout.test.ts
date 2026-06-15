@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ExerciseItem, RoutineBlock, RoutinePreset, SetSegment } from "../types";
 import {
   advanceSet,
+  canAdvanceSet,
   createBlockExercise,
   createCompletion,
   createMultiBlock,
@@ -300,5 +301,29 @@ describe("simple timer", () => {
       state: { remaining: 0, duration: null },
       finished: true
     });
+  });
+});
+
+describe("canAdvanceSet", () => {
+  it("allows advancing only in routine mode with a ready routine", () => {
+    expect(canAdvanceSet("routine", true, 2, "ready")).toBe(true);
+  });
+
+  it("blocks advancing in off mode even if a routine session exists", () => {
+    expect(canAdvanceSet("off", true, 2, "ready")).toBe(false);
+  });
+
+  it("blocks advancing in timer mode even if a routine session exists", () => {
+    expect(canAdvanceSet("timer", true, 2, "ready")).toBe(false);
+  });
+
+  it("blocks advancing without an active routine or blocks", () => {
+    expect(canAdvanceSet("routine", false, 2, "ready")).toBe(false);
+    expect(canAdvanceSet("routine", true, 0, "ready")).toBe(false);
+  });
+
+  it("blocks advancing when not in the ready phase", () => {
+    expect(canAdvanceSet("routine", true, 2, "rest")).toBe(false);
+    expect(canAdvanceSet("routine", true, 2, "complete")).toBe(false);
   });
 });

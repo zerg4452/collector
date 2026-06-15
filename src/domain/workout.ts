@@ -4,10 +4,12 @@ import type {
   BlockExerciseSnapshot,
   ExerciseItem,
   RoutineBlock,
+  RoutineMode,
   RoutinePreset,
   SetSegment,
   Weekday,
   WorkoutCompletion,
+  WorkoutPhase,
   WorkoutSessionState
 } from "../types";
 
@@ -224,6 +226,15 @@ export const tickTimer = (
         state: { remaining: state.remaining - 1, duration: state.duration },
         finished: false
       };
+
+// 세트 전진은 루틴 모드에서 활성 루틴이 ready 상태일 때만 허용한다.
+// off/timer 모드에서 단축키 입력이 숨겨진 루틴 세션을 진행시키지 못하게 막는다.
+export const canAdvanceSet = (
+  mode: RoutineMode,
+  hasRoutine: boolean,
+  blockCount: number,
+  phase: WorkoutPhase
+): boolean => mode === "routine" && hasRoutine && blockCount > 0 && phase === "ready";
 
 export const initialWorkoutSession = (): WorkoutSessionState => ({
   blockIndex: 0,

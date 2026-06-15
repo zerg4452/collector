@@ -10,6 +10,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   advanceSet,
+  canAdvanceSet,
   clampVolume,
   createCompletion,
   createId,
@@ -506,7 +507,14 @@ function App() {
   }, [data.completions, todayPlan.routine]);
 
   const handleSetComplete = useCallback(() => {
-    if (!todayPlan.routine || todayPlan.blocks.length === 0 || session.phase !== "ready") {
+    if (
+      !canAdvanceSet(
+        data.settings.routineMode,
+        Boolean(todayPlan.routine),
+        todayPlan.blocks.length,
+        session.phase
+      )
+    ) {
       return;
     }
 
@@ -518,7 +526,13 @@ function App() {
     if (result.completedWorkout) {
       completeWorkoutForToday();
     }
-  }, [completeWorkoutForToday, session, todayPlan.blocks, todayPlan.routine]);
+  }, [
+    completeWorkoutForToday,
+    data.settings.routineMode,
+    session,
+    todayPlan.blocks,
+    todayPlan.routine
+  ]);
 
   const handleUndo = () => {
     if (!previousSession) {
@@ -536,7 +550,11 @@ function App() {
   };
 
   useEffect(() => {
-    if (session.phase !== "rest" || session.remainingRestSeconds <= 0) {
+    if (
+      data.settings.routineMode !== "routine" ||
+      session.phase !== "rest" ||
+      session.remainingRestSeconds <= 0
+    ) {
       return;
     }
 
@@ -562,7 +580,7 @@ function App() {
   }, [data.settings, session.phase, session.remainingRestSeconds]);
 
   useEffect(() => {
-    if (timer.remaining <= 0) {
+    if (data.settings.routineMode !== "timer" || timer.remaining <= 0) {
       return;
     }
 
@@ -581,6 +599,19 @@ function App() {
 
     return () => window.clearInterval(interval);
   }, [timer.remaining, data.settings]);
+
+  // 모드를 바꾸면 비활성 모드의 진행 상태/타이머/알람을 정리해
+  // 숨겨진 기능이 뒤에서 카운트다운하거나 알람을 울리지 않게 한다.
+  useEffect(() => {
+    if (data.settings.routineMode !== "routine") {
+      setSession(initialWorkoutSession());
+      setPreviousSession(null);
+    }
+    if (data.settings.routineMode !== "timer") {
+      setTimer(initialTimerState());
+    }
+    setRestAlert(false);
+  }, [data.settings.routineMode]);
 
   useEffect(() => {
     if (!data.settings.keyboardShortcutEnabled) {
