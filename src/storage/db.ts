@@ -138,7 +138,9 @@ export const loadAppData = async (): Promise<AppData> => {
         restEndSoundEnabled: storedSettings.restEndSoundEnabled,
         restEndVisualAlertEnabled: storedSettings.restEndVisualAlertEnabled,
         floatingControlPosition: storedSettings.floatingControlPosition,
-        keyboardShortcutEnabled: storedSettings.keyboardShortcutEnabled
+        keyboardShortcutEnabled: storedSettings.keyboardShortcutEnabled,
+        routineTabEnabled:
+          storedSettings.routineTabEnabled ?? defaultSettings.routineTabEnabled
       }
     : defaultSettings;
 

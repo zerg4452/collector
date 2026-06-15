@@ -69,6 +69,17 @@ function SettingsView({
           />
           단축키 보조 입력
         </label>
+
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={settings.routineTabEnabled}
+            onChange={(event) =>
+              onChange({ ...settings, routineTabEnabled: event.target.checked })
+            }
+          />
+          루틴 탭 표시
+        </label>
       </div>
     </section>
   );

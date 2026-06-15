@@ -46,7 +46,8 @@ export const defaultSettings: AppSettings = {
   restEndSoundEnabled: true,
   restEndVisualAlertEnabled: true,
   floatingControlPosition: { x: 24, y: 24 },
-  keyboardShortcutEnabled: true
+  keyboardShortcutEnabled: true,
+  routineTabEnabled: true
 };
 
 export const createId = (prefix: string) =>

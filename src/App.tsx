@@ -605,9 +605,19 @@ function App() {
     window.addEventListener("pointerup", onUp);
   };
 
+  useEffect(() => {
+    if (!data.settings.routineTabEnabled && tab === "routines") {
+      setTab("workout");
+    }
+  }, [data.settings.routineTabEnabled, tab]);
+
   if (!isLoaded) {
     return <main className="loading">데이터를 불러오는 중입니다.</main>;
   }
+
+  const visibleTabs = tabItems.filter(
+    (item) => item.id !== "routines" || data.settings.routineTabEnabled
+  );
 
   return (
     <div className="app-shell">
@@ -623,7 +633,7 @@ function App() {
         </div>
 
         <nav className="tab-list" aria-label="주요 화면">
-          {tabItems.map((item) => {
+          {visibleTabs.map((item) => {
             const Icon = item.icon;
             return (
               <button

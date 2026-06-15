@@ -89,6 +89,7 @@ export type AppSettings = {
   restEndVisualAlertEnabled: boolean;
   floatingControlPosition: FloatingControlPosition;
   keyboardShortcutEnabled: boolean;
+  routineTabEnabled: boolean;
 };
 
 export type WorkoutPhase = "ready" | "rest" | "complete";
