@@ -213,7 +213,7 @@ function WorkoutView({
         )}
 
         <div
-          className="floating-control"
+          className={`floating-control floating-control--${mode}`}
           style={{
             transform: `translate(${settings.floatingControlPosition.x}px, ${settings.floatingControlPosition.y}px)`
           }}

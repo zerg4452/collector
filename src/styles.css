@@ -305,6 +305,18 @@ button:focus-visible {
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
 }
 
+/* timer 모드: 드래그 · 30초 · 60초 · 카운트다운 · 다음영상 · 전체화면 */
+.floating-control--timer {
+  grid-template-columns: 36px 82px 82px minmax(120px, 1fr) 40px 40px;
+}
+
+/* off 모드: 드래그 · 다음영상 · 전체화면만 (빈 컬럼 없이 좌측 정렬) */
+.floating-control--off {
+  grid-template-columns: 36px 40px 40px;
+  min-width: 0;
+  max-width: max-content;
+}
+
 .drag-handle {
   width: 36px;
   height: 42px;
