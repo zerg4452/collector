@@ -1,6 +1,6 @@
 // 루틴 프리셋과 요일별 블록 구성을 편집한다.
 import { ArrowDown, ArrowUp, CheckCircle2, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   BlockExerciseSnapshot,
   ExerciseItem,
@@ -61,6 +61,10 @@ function RoutineView({
   onMoveBlock
 }: RoutineViewProps) {
   const [draft, setDraft] = useState<BlockDraft | null>(null);
+
+  useEffect(() => {
+    setDraft(null);
+  }, [selectedRoutineId, selectedDay]);
 
   const dayBlocks = selectedRoutine
     ? [...selectedRoutine.days[selectedDay]].sort((a, b) => a.order - b.order)

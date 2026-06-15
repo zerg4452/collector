@@ -200,10 +200,13 @@ function App() {
   useEffect(() => {
     loadAppData()
       .then((loaded) => {
-        setData(loaded);
+        setData({ ...loaded, settings: { ...defaultSettings, ...loaded.settings } });
         const active = loaded.routines.find((routine) => routine.isActive);
         setSelectedRoutineId(active?.id ?? loaded.routines[0]?.id ?? "");
         setSelectedPlaylistId(loaded.playlists[0]?.id ?? "");
+      })
+      .catch(() => {
+        // DB load failure — keep default empty state
       })
       .finally(() => setIsLoaded(true));
   }, []);
@@ -579,8 +582,8 @@ function App() {
 
     const onMove = (moveEvent: PointerEvent) => {
       const nextPosition = {
-        x: Math.max(12, origin.x + moveEvent.clientX - startX),
-        y: Math.max(12, origin.y + moveEvent.clientY - startY)
+        x: Math.min(Math.max(12, origin.x + moveEvent.clientX - startX), window.innerWidth - 160),
+        y: Math.min(Math.max(12, origin.y + moveEvent.clientY - startY), window.innerHeight - 220)
       };
       latestPositionRef.current = nextPosition;
       setData((current) => ({
