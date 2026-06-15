@@ -70,16 +70,27 @@ function SettingsView({
           단축키 보조 입력
         </label>
 
-        <label className="toggle-row">
-          <input
-            type="checkbox"
-            checked={settings.routineTabEnabled}
-            onChange={(event) =>
-              onChange({ ...settings, routineTabEnabled: event.target.checked })
-            }
-          />
-          루틴 탭 표시
-        </label>
+        <fieldset className="radio-group">
+          <legend>운동 루틴 모드</legend>
+          {([
+            { value: "off", label: "끄기" },
+            { value: "routine", label: "운동 루틴" },
+            { value: "timer", label: "단순 타이머" }
+          ] as const).map((option) => (
+            <label key={option.value} className="radio-row">
+              <input
+                type="radio"
+                name="routineMode"
+                value={option.value}
+                checked={settings.routineMode === option.value}
+                onChange={() =>
+                  onChange({ ...settings, routineMode: option.value })
+                }
+              />
+              {option.label}
+            </label>
+          ))}
+        </fieldset>
       </div>
     </section>
   );

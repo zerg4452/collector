@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import type {
   AppSettings,
   RoutineBlock,
+  RoutineMode,
   Weekday,
   WorkoutSessionState,
   YoutubePlaylist
@@ -46,6 +47,10 @@ type WorkoutViewProps = {
   onUndo: () => void;
   onDragStart: (event: React.PointerEvent<HTMLButtonElement>) => void;
   canUndo: boolean;
+  mode: RoutineMode;
+  timerRemaining: number;
+  timerDuration: number | null;
+  onTimer: (seconds: number) => void;
 };
 
 function WorkoutView({
@@ -66,7 +71,11 @@ function WorkoutView({
   onSetComplete,
   onUndo,
   onDragStart,
-  canUndo
+  canUndo,
+  mode,
+  timerRemaining,
+  timerDuration,
+  onTimer
 }: WorkoutViewProps) {
   const videoStageRef = useRef<HTMLDivElement | null>(null);
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
@@ -110,7 +119,13 @@ function WorkoutView({
       <div className="section-heading">
         <div>
           <p className="eyebrow">{weekdayLabels[weekday]}요일</p>
-          <h2>{routineName || "활성 루틴 없음"}</h2>
+          <h2>
+            {mode === "timer"
+              ? "타이머"
+              : mode === "off"
+                ? "운동"
+                : routineName || "활성 루틴 없음"}
+          </h2>
         </div>
         {hasCompletion && (
           <span className="status-pill done">
@@ -211,46 +226,76 @@ function WorkoutView({
           >
             <Grip size={18} aria-hidden="true" />
           </button>
-          <div className="floating-main">
-            <span className="floating-label">
-              {session.phase === "rest"
-                ? "휴식"
-                : session.phase === "complete"
-                  ? "완료"
-                  : block
-                    ? `진행 · 라운드 ${session.round}/${block.rounds}`
-                    : "진행"}
-            </span>
-            <strong>{exercise?.name ?? "오늘 운동 없음"}</strong>
-            <span>{prescription ? describePrescription(prescription) : "루틴을 준비해 주세요"}</span>
-            {nextExercise && nextPrescription && (
-              <span className="next-hint">
-                다음: {nextExercise.name} {describePrescription(nextPrescription)} (휴식 없이 바로)
-              </span>
-            )}
-          </div>
-          <div className="timer-box">
-            {session.phase === "rest" ? formatSeconds(session.remainingRestSeconds) : "--:--"}
-          </div>
-          <button
-            className="primary-action"
-            type="button"
-            onClick={onSetComplete}
-            disabled={!canCompleteSet}
-            title="세트 완료"
-          >
-            <MousePointerClick size={18} aria-hidden="true" />
-            세트 완료
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onUndo}
-            disabled={!canUndo}
-            title="되돌리기"
-          >
-            <RotateCcw size={18} aria-hidden="true" />
-          </button>
+          {mode === "routine" && (
+            <>
+              <div className="floating-main">
+                <span className="floating-label">
+                  {session.phase === "rest"
+                    ? "휴식"
+                    : session.phase === "complete"
+                      ? "완료"
+                      : block
+                        ? `진행 · 라운드 ${session.round}/${block.rounds}`
+                        : "진행"}
+                </span>
+                <strong>{exercise?.name ?? "오늘 운동 없음"}</strong>
+                <span>
+                  {prescription ? describePrescription(prescription) : "루틴을 준비해 주세요"}
+                </span>
+                {nextExercise && nextPrescription && (
+                  <span className="next-hint">
+                    다음: {nextExercise.name} {describePrescription(nextPrescription)} (휴식 없이 바로)
+                  </span>
+                )}
+              </div>
+              <div className="timer-box">
+                {session.phase === "rest" ? formatSeconds(session.remainingRestSeconds) : "--:--"}
+              </div>
+              <button
+                className="primary-action"
+                type="button"
+                onClick={onSetComplete}
+                disabled={!canCompleteSet}
+                title="세트 완료"
+              >
+                <MousePointerClick size={18} aria-hidden="true" />
+                세트 완료
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={onUndo}
+                disabled={!canUndo}
+                title="되돌리기"
+              >
+                <RotateCcw size={18} aria-hidden="true" />
+              </button>
+            </>
+          )}
+
+          {mode === "timer" && (
+            <>
+              <button
+                className={`primary-action ${timerDuration === 30 ? "active" : ""}`}
+                type="button"
+                onClick={() => onTimer(30)}
+                title="30초 타이머"
+              >
+                30초
+              </button>
+              <button
+                className={`primary-action ${timerDuration === 60 ? "active" : ""}`}
+                type="button"
+                onClick={() => onTimer(60)}
+                title="60초 타이머"
+              >
+                60초
+              </button>
+              <div className="timer-box">
+                {timerRemaining > 0 ? formatSeconds(timerRemaining) : "--:--"}
+              </div>
+            </>
+          )}
           <button
             className="icon-button"
             type="button"
@@ -275,40 +320,42 @@ function WorkoutView({
         </div>
       </div>
 
-      <div className="workout-list">
-        {blocks.length === 0 ? (
-          <p className="empty-state">오늘 루틴 없음</p>
-        ) : (
-          blocks.map((item, index) => (
-            <div
-              key={item.id}
-              className={`workout-row ${index === session.blockIndex ? "current" : ""}`}
-            >
-              <span className="order-badge">{index + 1}</span>
-              <div>
-                {item.exercises.length === 1 ? (
-                  <>
-                    <strong>{item.exercises[0].name}</strong>
-                    <span>
-                      {describeSegments(item.exercises[0].segments)} · {item.rounds}세트 · 휴식{" "}
-                      {formatSeconds(item.restSeconds)}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <strong>
-                      묶음 · {item.exercises.map((entry) => entry.name).join(" → ")}
-                    </strong>
-                    <span>
-                      {item.rounds}라운드 · 라운드 휴식 {formatSeconds(item.restSeconds)}
-                    </span>
-                  </>
-                )}
+      {mode === "routine" && (
+        <div className="workout-list">
+          {blocks.length === 0 ? (
+            <p className="empty-state">오늘 루틴 없음</p>
+          ) : (
+            blocks.map((item, index) => (
+              <div
+                key={item.id}
+                className={`workout-row ${index === session.blockIndex ? "current" : ""}`}
+              >
+                <span className="order-badge">{index + 1}</span>
+                <div>
+                  {item.exercises.length === 1 ? (
+                    <>
+                      <strong>{item.exercises[0].name}</strong>
+                      <span>
+                        {describeSegments(item.exercises[0].segments)} · {item.rounds}세트 · 휴식{" "}
+                        {formatSeconds(item.restSeconds)}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <strong>
+                        묶음 · {item.exercises.map((entry) => entry.name).join(" → ")}
+                      </strong>
+                      <span>
+                        {item.rounds}라운드 · 라운드 휴식 {formatSeconds(item.restSeconds)}
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))
-        )}
-      </div>
+            ))
+          )}
+        </div>
+      )}
     </section>
   );
 }

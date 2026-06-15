@@ -11,10 +11,13 @@ import {
   finishRest,
   flattenPrescriptions,
   getRoutineForDate,
+  initialTimerState,
   initialWorkoutSession,
   parseClusterReps,
   prescriptionForRound,
   setActiveRoutine,
+  tickTimer,
+  toggleTimer,
   totalSets
 } from "./workout";
 
@@ -266,5 +269,36 @@ describe("completion", () => {
     expect(completion.date).toBe(completion.id);
     expect(completion.completed).toBe(true);
     expect(completion.routinePresetId).toBe("routine-1");
+  });
+});
+
+describe("simple timer", () => {
+  it("starts a timer from the given seconds", () => {
+    const next = toggleTimer(initialTimerState(), 30);
+    expect(next).toEqual({ remaining: 30, duration: 30 });
+  });
+
+  it("cancels when the same running duration is pressed again", () => {
+    const running = { remaining: 12, duration: 30 };
+    expect(toggleTimer(running, 30)).toEqual({ remaining: 0, duration: null });
+  });
+
+  it("restarts with a different duration while running", () => {
+    const running = { remaining: 12, duration: 30 };
+    expect(toggleTimer(running, 60)).toEqual({ remaining: 60, duration: 60 });
+  });
+
+  it("ticks down by one second", () => {
+    expect(tickTimer({ remaining: 30, duration: 30 })).toEqual({
+      state: { remaining: 29, duration: 30 },
+      finished: false
+    });
+  });
+
+  it("finishes and resets at the last second", () => {
+    expect(tickTimer({ remaining: 1, duration: 30 })).toEqual({
+      state: { remaining: 0, duration: null },
+      finished: true
+    });
   });
 });

@@ -3,6 +3,7 @@ import type {
   AppData,
   AppSettings,
   ExerciseItem,
+  RoutineMode,
   RoutinePreset,
   WorkoutCompletion,
   YoutubePlaylist
@@ -132,15 +133,24 @@ export const loadAppData = async (): Promise<AppData> => {
     ]);
   }
 
-  const settings = storedSettings
+  const legacySettings = storedSettings as
+    | (typeof storedSettings & {
+        routineMode?: RoutineMode;
+        routineTabEnabled?: boolean;
+      })
+    | undefined;
+
+  const settings = legacySettings
     ? {
-        alarmVolume: storedSettings.alarmVolume,
-        restEndSoundEnabled: storedSettings.restEndSoundEnabled,
-        restEndVisualAlertEnabled: storedSettings.restEndVisualAlertEnabled,
-        floatingControlPosition: storedSettings.floatingControlPosition,
-        keyboardShortcutEnabled: storedSettings.keyboardShortcutEnabled,
-        routineTabEnabled:
-          storedSettings.routineTabEnabled ?? defaultSettings.routineTabEnabled
+        alarmVolume: legacySettings.alarmVolume,
+        restEndSoundEnabled: legacySettings.restEndSoundEnabled,
+        restEndVisualAlertEnabled: legacySettings.restEndVisualAlertEnabled,
+        floatingControlPosition: legacySettings.floatingControlPosition,
+        keyboardShortcutEnabled: legacySettings.keyboardShortcutEnabled,
+        // 구버전(boolean) 사용자: false→off, 그 외→routine
+        routineMode:
+          legacySettings.routineMode ??
+          (legacySettings.routineTabEnabled === false ? "off" : "routine")
       }
     : defaultSettings;
 

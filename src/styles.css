@@ -568,6 +568,36 @@ button:focus-visible {
   min-height: 18px;
 }
 
+.primary-action.active {
+  background: var(--teal-dark);
+  border-color: var(--ink);
+}
+
+.radio-group {
+  border: 1px solid #d9d2c5;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.radio-group legend {
+  font-weight: 800;
+  padding: 0 6px;
+}
+
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.radio-row input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+}
+
 @media (max-width: 920px) {
   body {
     min-width: 0;
