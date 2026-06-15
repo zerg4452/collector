@@ -19,10 +19,13 @@ import {
   finishRest,
   getRoutineForDate,
   getTodayKey,
+  initialTimerState,
   initialWorkoutSession,
   parseClusterReps,
   setActiveRoutine,
-  toDateKey
+  tickTimer,
+  toDateKey,
+  toggleTimer
 } from "./domain/workout";
 import {
   loadAppData,
@@ -195,6 +198,7 @@ function App() {
   const [session, setSession] = useState<WorkoutSessionState>(initialWorkoutSession);
   const [previousSession, setPreviousSession] = useState<WorkoutSessionState | null>(null);
   const [restAlert, setRestAlert] = useState(false);
+  const [timer, setTimer] = useState(initialTimerState);
   const latestPositionRef = useRef(data.settings.floatingControlPosition);
 
   useEffect(() => {
@@ -322,6 +326,11 @@ function App() {
   const handleActivateRoutine = (routineId: string) => {
     updateRoutines(setActiveRoutine(data.routines, routineId));
     setSelectedRoutineId(routineId);
+  };
+
+  const handleTimer = (seconds: number) => {
+    setRestAlert(false);
+    setTimer((current) => toggleTimer(current, seconds));
   };
 
   const mutateSelectedDay = (
@@ -553,6 +562,27 @@ function App() {
   }, [data.settings, session.phase, session.remainingRestSeconds]);
 
   useEffect(() => {
+    if (timer.remaining <= 0) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setTimer((current) => {
+        const { state, finished } = tickTimer(current);
+        if (finished) {
+          if (data.settings.restEndVisualAlertEnabled) {
+            setRestAlert(true);
+          }
+          playAlarm(data.settings);
+        }
+        return state;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [timer.remaining, data.settings]);
+
+  useEffect(() => {
     if (!data.settings.keyboardShortcutEnabled) {
       return;
     }
@@ -606,17 +636,17 @@ function App() {
   };
 
   useEffect(() => {
-    if (!data.settings.routineTabEnabled && tab === "routines") {
+    if (data.settings.routineMode !== "routine" && tab === "routines") {
       setTab("workout");
     }
-  }, [data.settings.routineTabEnabled, tab]);
+  }, [data.settings.routineMode, tab]);
 
   if (!isLoaded) {
     return <main className="loading">데이터를 불러오는 중입니다.</main>;
   }
 
   const visibleTabs = tabItems.filter(
-    (item) => item.id !== "routines" || data.settings.routineTabEnabled
+    (item) => item.id !== "routines" || data.settings.routineMode === "routine"
   );
 
   return (
@@ -675,6 +705,10 @@ function App() {
             onUndo={handleUndo}
             onDragStart={handleDragStart}
             canUndo={Boolean(previousSession)}
+            mode={data.settings.routineMode}
+            timerRemaining={timer.remaining}
+            timerDuration={timer.duration}
+            onTimer={handleTimer}
           />
         )}
 
