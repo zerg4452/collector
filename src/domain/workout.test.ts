@@ -11,6 +11,7 @@ import {
   emptyRoutineDays,
   finishRest,
   flattenPrescriptions,
+  formatRemainingSeconds,
   getRoutineForDate,
   initialTimerState,
   initialWorkoutSession,
@@ -325,5 +326,17 @@ describe("canAdvanceSet", () => {
   it("blocks advancing when not in the ready phase", () => {
     expect(canAdvanceSet("routine", true, 2, "rest")).toBe(false);
     expect(canAdvanceSet("routine", true, 2, "complete")).toBe(false);
+  });
+});
+
+describe("formatRemainingSeconds", () => {
+  it("shows the integer seconds while running", () => {
+    expect(formatRemainingSeconds(59)).toBe("59");
+    expect(formatRemainingSeconds(5)).toBe("5");
+  });
+
+  it("shows a dash when not running", () => {
+    expect(formatRemainingSeconds(0)).toBe("--");
+    expect(formatRemainingSeconds(-3)).toBe("--");
   });
 });

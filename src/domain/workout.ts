@@ -352,4 +352,8 @@ export const formatSeconds = (seconds: number) => {
   return `${minutes}:${`${remainder}`.padStart(2, "0")}`;
 };
 
+// timer 모드 카운트다운: 분:초 대신 정수 초만 표시한다.
+export const formatRemainingSeconds = (seconds: number): string =>
+  seconds > 0 ? String(Math.floor(seconds)) : "--";
+
 export const clampVolume = (volume: number) => Math.min(100, Math.max(0, volume));

@@ -23,6 +23,7 @@ import type {
 import {
   describePrescription,
   describeSegments,
+  formatRemainingSeconds,
   formatSeconds,
   prescriptionForRound,
   weekdayLabels
@@ -292,7 +293,7 @@ function WorkoutView({
                 60초
               </button>
               <div className="timer-box">
-                {timerRemaining > 0 ? formatSeconds(timerRemaining) : "--:--"}
+                {formatRemainingSeconds(timerRemaining)}
               </div>
             </>
           )}
