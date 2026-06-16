@@ -332,13 +332,11 @@ function App() {
 
   const handleTimer = (seconds: number) => {
     setRestAlert(false);
-    setTimer((current) => {
-      const next = toggleTimer(current, seconds);
-      if (next.remaining > 0) {
-        setTimerCount((count) => count + 1);
-      }
-      return next;
-    });
+    const next = toggleTimer(timer, seconds);
+    setTimer(next);
+    if (next.remaining > 0) {
+      setTimerCount((count) => count + 1);
+    }
   };
 
   const handleResetTimerCount = () => setTimerCount(0);
