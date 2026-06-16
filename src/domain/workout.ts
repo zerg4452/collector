@@ -358,6 +358,10 @@ export const formatRemainingSeconds = (seconds: number): string =>
 
 export const clampVolume = (volume: number) => Math.min(100, Math.max(0, volume));
 
+// 현재 위치에서 delta 초 이동, [0, duration] 으로 클램프.
+export const seekTarget = (current: number, delta: number, duration: number): number =>
+  Math.min(Math.max(0, current + delta), duration);
+
 // 플로팅 컨트롤을 stage 안에 머무르게 한다. 최소 12px 마진, 최대는
 // stage 에서 컨트롤 크기와 마진을 뺀 위치. 음수가 되면 12px 로 고정.
 export const clampFloatingPosition = (

@@ -18,6 +18,7 @@ import {
   initialWorkoutSession,
   parseClusterReps,
   prescriptionForRound,
+  seekTarget,
   setActiveRoutine,
   tickTimer,
   toggleTimer,
@@ -364,5 +365,17 @@ describe("formatRemainingSeconds", () => {
   it("shows a dash when not running", () => {
     expect(formatRemainingSeconds(0)).toBe("--");
     expect(formatRemainingSeconds(-3)).toBe("--");
+  });
+});
+
+describe("seekTarget", () => {
+  it("moves forward and backward within bounds", () => {
+    expect(seekTarget(30, 5, 100)).toBe(35);
+    expect(seekTarget(30, -5, 100)).toBe(25);
+  });
+
+  it("clamps to start and end", () => {
+    expect(seekTarget(2, -5, 100)).toBe(0);
+    expect(seekTarget(98, 5, 100)).toBe(100);
   });
 });

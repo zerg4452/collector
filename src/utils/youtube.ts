@@ -1,38 +1,37 @@
-// 유튜브 URL을 앱 안에서 재생 가능한 주소로 변환한다.
-export const toYoutubeEmbedUrl = (value: string) => {
+export const toYoutubeVideoId = (value: string): string => {
   const trimmed = value.trim();
   if (!trimmed) {
     return "";
   }
-
   try {
     const url = new URL(trimmed);
     if (url.hostname.includes("youtu.be")) {
-      const id = url.pathname.replace("/", "");
-      return id ? `https://www.youtube.com/embed/${id}` : "";
+      return url.pathname.replace("/", "");
     }
-
     if (url.hostname.includes("youtube.com")) {
-      const id = url.searchParams.get("v");
-      if (id) {
-        return `https://www.youtube.com/embed/${id}`;
+      const v = url.searchParams.get("v");
+      if (v) {
+        return v;
       }
-
-      const shortsMatch = url.pathname.match(/\/shorts\/([^/?]+)/);
-      if (shortsMatch?.[1]) {
-        return `https://www.youtube.com/embed/${shortsMatch[1]}`;
+      const shorts = url.pathname.match(/\/shorts\/([^/?]+)/);
+      if (shorts?.[1]) {
+        return shorts[1];
       }
-
-      const embedMatch = url.pathname.match(/\/embed\/([^/?]+)/);
-      if (embedMatch?.[1]) {
-        return `https://www.youtube.com/embed/${embedMatch[1]}`;
+      const embed = url.pathname.match(/\/embed\/([^/?]+)/);
+      if (embed?.[1]) {
+        return embed[1];
       }
     }
   } catch {
     return "";
   }
-
   return "";
+};
+
+// 유튜브 URL을 앱 안에서 재생 가능한 주소로 변환한다.
+export const toYoutubeEmbedUrl = (value: string) => {
+  const id = toYoutubeVideoId(value);
+  return id ? `https://www.youtube.com/embed/${id}` : "";
 };
 
 export const isHttpUrl = (value: string) => {
