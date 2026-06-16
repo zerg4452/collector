@@ -280,6 +280,9 @@ function WorkoutView({
 
           {mode === "timer" && (
             <>
+              <div className="timer-count" title="타이머 실행 횟수">
+                {timerCount}회
+              </div>
               <button
                 className={`primary-action ${timerDuration === 30 ? "active" : ""}`}
                 type="button"
@@ -295,6 +298,14 @@ function WorkoutView({
                 title="60초 타이머"
               >
                 60초
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={onResetTimerCount}
+                title="카운트 초기화"
+              >
+                <RotateCcw size={18} aria-hidden="true" />
               </button>
               <div className="timer-box">
                 {formatRemainingSeconds(timerRemaining)}
