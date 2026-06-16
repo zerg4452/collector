@@ -36,6 +36,10 @@ export type YTPlayerHandle = {
   getCurrentTime: () => number;
   getDuration: () => number;
   loadVideoById: (id: string) => void;
+  unMute: () => void;
+  playVideo: () => void;
+  pauseVideo: () => void;
+  getPlayerState: () => number;
 };
 
 declare global {

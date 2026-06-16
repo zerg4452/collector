@@ -674,11 +674,20 @@ function App() {
         } else {
           void stage?.requestFullscreen();
         }
+      } else if (key === " " && player) {
+        event.preventDefault();
+        if (player.getPlayerState() === 1) {
+          player.pauseVideo();
+        } else {
+          player.playVideo();
+        }
       } else if (key === "ArrowUp" && player) {
         event.preventDefault();
+        player.unMute();
         player.setVolume(clampVolume(player.getVolume() + 5));
       } else if (key === "ArrowDown" && player) {
         event.preventDefault();
+        player.unMute();
         player.setVolume(clampVolume(player.getVolume() - 5));
       } else if (key === "ArrowRight" && player) {
         event.preventDefault();
