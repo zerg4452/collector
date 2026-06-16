@@ -357,3 +357,21 @@ export const formatRemainingSeconds = (seconds: number): string =>
   seconds > 0 ? String(Math.floor(seconds)) : "--";
 
 export const clampVolume = (volume: number) => Math.min(100, Math.max(0, volume));
+
+// 플로팅 컨트롤을 stage 안에 머무르게 한다. 최소 12px 마진, 최대는
+// stage 에서 컨트롤 크기와 마진을 뺀 위치. 음수가 되면 12px 로 고정.
+export const clampFloatingPosition = (
+  pos: { x: number; y: number },
+  stageWidth: number,
+  stageHeight: number,
+  controlWidth: number,
+  controlHeight: number
+): { x: number; y: number } => {
+  const margin = 12;
+  const maxX = Math.max(margin, stageWidth - controlWidth - margin);
+  const maxY = Math.max(margin, stageHeight - controlHeight - margin);
+  return {
+    x: Math.min(Math.max(margin, pos.x), maxX),
+    y: Math.min(Math.max(margin, pos.y), maxY)
+  };
+};

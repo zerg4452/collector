@@ -54,6 +54,7 @@ type WorkoutViewProps = {
   onTimer: (seconds: number) => void;
   timerCount: number;
   onResetTimerCount: () => void;
+  onClampFloating: (stageWidth: number, stageHeight: number, controlWidth: number, controlHeight: number) => void;
 };
 
 function WorkoutView({
@@ -80,7 +81,8 @@ function WorkoutView({
   timerDuration,
   onTimer,
   timerCount,
-  onResetTimerCount
+  onResetTimerCount,
+  onClampFloating
 }: WorkoutViewProps) {
   const videoStageRef = useRef<HTMLDivElement | null>(null);
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
@@ -93,6 +95,28 @@ function WorkoutView({
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    const stage = videoStageRef.current;
+    if (!stage) {
+      return;
+    }
+    const notify = () => {
+      const control = stage.querySelector(".floating-control") as HTMLElement | null;
+      onClampFloating(
+        stage.clientWidth,
+        stage.clientHeight,
+        control?.offsetWidth ?? 160,
+        control?.offsetHeight ?? 70
+      );
+    };
+    document.addEventListener("fullscreenchange", notify);
+    window.addEventListener("resize", notify);
+    return () => {
+      document.removeEventListener("fullscreenchange", notify);
+      window.removeEventListener("resize", notify);
+    };
+  }, [onClampFloating]);
 
   const handleToggleStageFullscreen = async () => {
     if (document.fullscreenElement === videoStageRef.current) {

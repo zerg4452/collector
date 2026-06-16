@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   advanceSet,
   canAdvanceSet,
+  clampFloatingPosition,
   clampVolume,
   createCompletion,
   createId,
@@ -341,6 +342,23 @@ function App() {
 
   const handleResetTimerCount = () => setTimerCount(0);
 
+  const handleClampFloating = useCallback(
+    (stageWidth: number, stageHeight: number, controlWidth: number, controlHeight: number) => {
+      setData((current) => {
+        const pos = current.settings.floatingControlPosition;
+        const clamped = clampFloatingPosition(pos, stageWidth, stageHeight, controlWidth, controlHeight);
+        if (clamped.x === pos.x && clamped.y === pos.y) {
+          return current;
+        }
+        latestPositionRef.current = clamped;
+        const settings = { ...current.settings, floatingControlPosition: clamped };
+        void saveSettings(settings);
+        return { ...current, settings };
+      });
+    },
+    []
+  );
+
   const mutateSelectedDay = (
     mutate: (blocks: RoutineBlock[]) => RoutineBlock[]
   ) => {
@@ -647,13 +665,23 @@ function App() {
     const startX = event.clientX;
     const startY = event.clientY;
     const origin = latestPositionRef.current;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const handle = event.currentTarget;
+    const control = handle.closest(".floating-control") as HTMLElement | null;
+    const stage = handle.closest(".video-stage") as HTMLElement | null;
+    handle.setPointerCapture(event.pointerId);
 
     const onMove = (moveEvent: PointerEvent) => {
-      const nextPosition = {
-        x: Math.min(Math.max(12, origin.x + moveEvent.clientX - startX), window.innerWidth - 160),
-        y: Math.min(Math.max(12, origin.y + moveEvent.clientY - startY), window.innerHeight - 220)
-      };
+      const stageW = stage?.clientWidth ?? window.innerWidth;
+      const stageH = stage?.clientHeight ?? window.innerHeight;
+      const controlW = control?.offsetWidth ?? 160;
+      const controlH = control?.offsetHeight ?? 70;
+      const nextPosition = clampFloatingPosition(
+        { x: origin.x + moveEvent.clientX - startX, y: origin.y + moveEvent.clientY - startY },
+        stageW,
+        stageH,
+        controlW,
+        controlH
+      );
       latestPositionRef.current = nextPosition;
       setData((current) => ({
         ...current,
@@ -750,6 +778,7 @@ function App() {
             onTimer={handleTimer}
             timerCount={timerCount}
             onResetTimerCount={handleResetTimerCount}
+            onClampFloating={handleClampFloating}
           />
         )}
 
