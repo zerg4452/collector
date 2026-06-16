@@ -200,6 +200,7 @@ function App() {
   const [previousSession, setPreviousSession] = useState<WorkoutSessionState | null>(null);
   const [restAlert, setRestAlert] = useState(false);
   const [timer, setTimer] = useState(initialTimerState);
+  const [timerCount, setTimerCount] = useState(0);
   const latestPositionRef = useRef(data.settings.floatingControlPosition);
 
   useEffect(() => {
@@ -331,8 +332,16 @@ function App() {
 
   const handleTimer = (seconds: number) => {
     setRestAlert(false);
-    setTimer((current) => toggleTimer(current, seconds));
+    setTimer((current) => {
+      const next = toggleTimer(current, seconds);
+      if (next.remaining > 0) {
+        setTimerCount((count) => count + 1);
+      }
+      return next;
+    });
   };
+
+  const handleResetTimerCount = () => setTimerCount(0);
 
   const mutateSelectedDay = (
     mutate: (blocks: RoutineBlock[]) => RoutineBlock[]
@@ -609,6 +618,7 @@ function App() {
     }
     if (data.settings.routineMode !== "timer") {
       setTimer(initialTimerState());
+      setTimerCount(0);
     }
     setRestAlert(false);
   }, [data.settings.routineMode]);
@@ -740,6 +750,8 @@ function App() {
             timerRemaining={timer.remaining}
             timerDuration={timer.duration}
             onTimer={handleTimer}
+            timerCount={timerCount}
+            onResetTimerCount={handleResetTimerCount}
           />
         )}
 

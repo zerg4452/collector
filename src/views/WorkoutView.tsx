@@ -52,6 +52,8 @@ type WorkoutViewProps = {
   timerRemaining: number;
   timerDuration: number | null;
   onTimer: (seconds: number) => void;
+  timerCount: number;
+  onResetTimerCount: () => void;
 };
 
 function WorkoutView({
@@ -76,7 +78,9 @@ function WorkoutView({
   mode,
   timerRemaining,
   timerDuration,
-  onTimer
+  onTimer,
+  timerCount,
+  onResetTimerCount
 }: WorkoutViewProps) {
   const videoStageRef = useRef<HTMLDivElement | null>(null);
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
