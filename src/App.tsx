@@ -24,6 +24,7 @@ import {
   initialTimerState,
   initialWorkoutSession,
   parseClusterReps,
+  seekTarget,
   setActiveRoutine,
   tickTimer,
   toDateKey,
@@ -52,7 +53,7 @@ import {
   fetchYoutubeTitle,
   nextPlaylistIndex,
   previousPlaylistIndex,
-  toYoutubeEmbedUrl
+  toYoutubeVideoId
 } from "./utils/youtube";
 import CalendarView from "./views/CalendarView";
 import ExerciseLibraryView, {
@@ -203,6 +204,13 @@ function App() {
   const [timer, setTimer] = useState(initialTimerState);
   const [timerCount, setTimerCount] = useState(0);
   const latestPositionRef = useRef(data.settings.floatingControlPosition);
+  const playerRef = useRef<import("./views/WorkoutView").YTPlayerHandle | null>(null);
+  const handlePlayerReady = useCallback(
+    (player: import("./views/WorkoutView").YTPlayerHandle) => {
+      playerRef.current = player;
+    },
+    []
+  );
 
   useEffect(() => {
     loadAppData()
@@ -227,7 +235,7 @@ function App() {
   const selectedPlaylist =
     data.playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null;
   const currentVideo = selectedPlaylist?.items[videoIndex] ?? null;
-  const embedUrl = currentVideo ? toYoutubeEmbedUrl(currentVideo.url) : "";
+  const videoId = currentVideo ? toYoutubeVideoId(currentVideo.url) : "";
   const completedDates = useMemo(
     () => new Map(data.completions.filter((item) => item.completed).map((item) => [item.date, item])),
     [data.completions]
@@ -650,11 +658,35 @@ function App() {
         target?.tagName === "INPUT" ||
         target?.tagName === "TEXTAREA" ||
         target?.tagName === "SELECT";
-      if (isTyping || event.key.toLowerCase() !== "s") {
+      if (isTyping) {
         return;
       }
-      event.preventDefault();
-      handleSetComplete();
+      const key = event.key;
+      const player = playerRef.current;
+      if (key.toLowerCase() === "s") {
+        event.preventDefault();
+        handleSetComplete();
+      } else if (key.toLowerCase() === "f") {
+        event.preventDefault();
+        const stage = document.querySelector(".video-stage") as HTMLElement | null;
+        if (document.fullscreenElement) {
+          void document.exitFullscreen();
+        } else {
+          void stage?.requestFullscreen();
+        }
+      } else if (key === "ArrowUp" && player) {
+        event.preventDefault();
+        player.setVolume(clampVolume(player.getVolume() + 5));
+      } else if (key === "ArrowDown" && player) {
+        event.preventDefault();
+        player.setVolume(clampVolume(player.getVolume() - 5));
+      } else if (key === "ArrowRight" && player) {
+        event.preventDefault();
+        player.seekTo(seekTarget(player.getCurrentTime(), 5, player.getDuration()), true);
+      } else if (key === "ArrowLeft" && player) {
+        event.preventDefault();
+        player.seekTo(seekTarget(player.getCurrentTime(), -5, player.getDuration()), true);
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -760,7 +792,8 @@ function App() {
             videoIndex={videoIndex}
             onNextVideo={handleNextVideo}
             onPreviousVideo={handlePreviousVideo}
-            embedUrl={embedUrl}
+            videoId={videoId}
+            onPlayerReady={handlePlayerReady}
             routineName={todayPlan.routine?.name ?? ""}
             weekday={todayPlan.weekday}
             blocks={todayPlan.blocks}

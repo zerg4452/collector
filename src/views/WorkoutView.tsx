@@ -29,6 +29,24 @@ import {
   weekdayLabels
 } from "../domain/workout";
 
+export type YTPlayerHandle = {
+  setVolume: (v: number) => void;
+  getVolume: () => number;
+  seekTo: (s: number, allow: boolean) => void;
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  loadVideoById: (id: string) => void;
+};
+
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (el: HTMLElement, config: Record<string, unknown>) => YTPlayerHandle;
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
 type WorkoutViewProps = {
   playlists: YoutubePlaylist[];
   selectedPlaylistId: string;
@@ -36,7 +54,8 @@ type WorkoutViewProps = {
   videoIndex: number;
   onNextVideo: () => void;
   onPreviousVideo: () => void;
-  embedUrl: string;
+  videoId: string;
+  onPlayerReady: (player: YTPlayerHandle) => void;
   routineName: string;
   weekday: Weekday;
   blocks: RoutineBlock[];
@@ -64,7 +83,8 @@ function WorkoutView({
   videoIndex,
   onNextVideo,
   onPreviousVideo,
-  embedUrl,
+  videoId,
+  onPlayerReady,
   routineName,
   weekday,
   blocks,
@@ -85,6 +105,8 @@ function WorkoutView({
   onClampFloating
 }: WorkoutViewProps) {
   const videoStageRef = useRef<HTMLDivElement | null>(null);
+  const playerHostRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<YTPlayerHandle | null>(null);
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
 
   useEffect(() => {
@@ -117,6 +139,54 @@ function WorkoutView({
       window.removeEventListener("resize", notify);
     };
   }, [onClampFloating]);
+
+  useEffect(() => {
+    if (!videoId) {
+      return;
+    }
+    const ensureApi = () =>
+      new Promise<void>((resolve) => {
+        if (window.YT?.Player) {
+          resolve();
+          return;
+        }
+        if (!document.getElementById("yt-iframe-api")) {
+          const script = document.createElement("script");
+          script.id = "yt-iframe-api";
+          script.src = "https://www.youtube.com/iframe_api";
+          document.body.appendChild(script);
+        }
+        const prev = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = () => {
+          prev?.();
+          resolve();
+        };
+      });
+
+    let cancelled = false;
+    void ensureApi().then(() => {
+      if (cancelled || !playerHostRef.current || !window.YT) {
+        return;
+      }
+      if (playerRef.current) {
+        playerRef.current.loadVideoById(videoId);
+        return;
+      }
+      const player = new window.YT.Player(playerHostRef.current, {
+        videoId,
+        playerVars: { enablejsapi: 1, origin: window.location.origin },
+        events: {
+          onReady: () => {
+            playerRef.current = player;
+            onPlayerReady(player);
+          }
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [videoId, onPlayerReady]);
 
   const handleToggleStageFullscreen = async () => {
     if (document.fullscreenElement === videoStageRef.current) {
@@ -227,13 +297,8 @@ function WorkoutView({
         ref={videoStageRef}
         className={`video-stage ${restAlert ? "rest-finished" : ""}`}
       >
-        {embedUrl ? (
-          <iframe
-            title="YouTube player"
-            src={embedUrl}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
+        {videoId ? (
+          <div ref={playerHostRef} className="video-frame" />
         ) : (
           <div className="video-placeholder">
             <Activity size={48} aria-hidden="true" />
