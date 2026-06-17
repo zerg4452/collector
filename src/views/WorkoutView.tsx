@@ -28,6 +28,7 @@ import {
   prescriptionForRound,
   weekdayLabels
 } from "../domain/workout";
+import { clearVideoProgress, loadVideoProgress, saveVideoProgress } from "../utils/videoProgress";
 
 export type YTPlayerHandle = {
   setVolume: (v: number) => void;
@@ -35,7 +36,7 @@ export type YTPlayerHandle = {
   seekTo: (s: number, allow: boolean) => void;
   getCurrentTime: () => number;
   getDuration: () => number;
-  loadVideoById: (id: string) => void;
+  loadVideoById: (id: string, startSeconds?: number) => void;
   unMute: () => void;
   playVideo: () => void;
   pauseVideo: () => void;
@@ -111,7 +112,12 @@ function WorkoutView({
   const videoStageRef = useRef<HTMLDivElement | null>(null);
   const playerHostRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayerHandle | null>(null);
+  const currentVideoIdRef = useRef(videoId);
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
+
+  useEffect(() => {
+    currentVideoIdRef.current = videoId;
+  }, [videoId]);
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -173,16 +179,25 @@ function WorkoutView({
         return;
       }
       if (playerRef.current) {
-        playerRef.current.loadVideoById(videoId);
+        playerRef.current.loadVideoById(videoId, loadVideoProgress(videoId));
         return;
       }
       const player = new window.YT.Player(playerHostRef.current, {
         videoId,
-        playerVars: { enablejsapi: 1, origin: window.location.origin },
+        playerVars: {
+          enablejsapi: 1,
+          origin: window.location.origin,
+          start: loadVideoProgress(videoId)
+        },
         events: {
           onReady: () => {
             playerRef.current = player;
             onPlayerReady(player);
+          },
+          onStateChange: (event: { data: number }) => {
+            if (event.data === 0) {
+              clearVideoProgress(currentVideoIdRef.current);
+            }
           }
         }
       });
@@ -191,6 +206,19 @@ function WorkoutView({
       cancelled = true;
     };
   }, [videoId, onPlayerReady]);
+
+  useEffect(() => {
+    if (!videoId) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      const player = playerRef.current;
+      if (player) {
+        saveVideoProgress(videoId, player.getCurrentTime());
+      }
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [videoId]);
 
   const handleToggleStageFullscreen = async () => {
     if (document.fullscreenElement === videoStageRef.current) {
