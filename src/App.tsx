@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   advanceSet,
   canAdvanceSet,
+  clampFloatingPosition,
   clampVolume,
   createCompletion,
   createId,
@@ -23,6 +24,7 @@ import {
   initialTimerState,
   initialWorkoutSession,
   parseClusterReps,
+  seekTarget,
   setActiveRoutine,
   tickTimer,
   toDateKey,
@@ -51,7 +53,7 @@ import {
   fetchYoutubeTitle,
   nextPlaylistIndex,
   previousPlaylistIndex,
-  toYoutubeEmbedUrl
+  toYoutubeVideoId
 } from "./utils/youtube";
 import CalendarView from "./views/CalendarView";
 import ExerciseLibraryView, {
@@ -200,7 +202,15 @@ function App() {
   const [previousSession, setPreviousSession] = useState<WorkoutSessionState | null>(null);
   const [restAlert, setRestAlert] = useState(false);
   const [timer, setTimer] = useState(initialTimerState);
+  const [timerCount, setTimerCount] = useState(0);
   const latestPositionRef = useRef(data.settings.floatingControlPosition);
+  const playerRef = useRef<import("./views/WorkoutView").YTPlayerHandle | null>(null);
+  const handlePlayerReady = useCallback(
+    (player: import("./views/WorkoutView").YTPlayerHandle) => {
+      playerRef.current = player;
+    },
+    []
+  );
 
   useEffect(() => {
     loadAppData()
@@ -225,7 +235,7 @@ function App() {
   const selectedPlaylist =
     data.playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null;
   const currentVideo = selectedPlaylist?.items[videoIndex] ?? null;
-  const embedUrl = currentVideo ? toYoutubeEmbedUrl(currentVideo.url) : "";
+  const videoId = currentVideo ? toYoutubeVideoId(currentVideo.url) : "";
   const completedDates = useMemo(
     () => new Map(data.completions.filter((item) => item.completed).map((item) => [item.date, item])),
     [data.completions]
@@ -331,8 +341,31 @@ function App() {
 
   const handleTimer = (seconds: number) => {
     setRestAlert(false);
-    setTimer((current) => toggleTimer(current, seconds));
+    const next = toggleTimer(timer, seconds);
+    setTimer(next);
+    if (next.remaining > 0) {
+      setTimerCount((count) => count + 1);
+    }
   };
+
+  const handleResetTimerCount = () => setTimerCount(0);
+
+  const handleClampFloating = useCallback(
+    (stageWidth: number, stageHeight: number, controlWidth: number, controlHeight: number) => {
+      setData((current) => {
+        const pos = current.settings.floatingControlPosition;
+        const clamped = clampFloatingPosition(pos, stageWidth, stageHeight, controlWidth, controlHeight);
+        if (clamped.x === pos.x && clamped.y === pos.y) {
+          return current;
+        }
+        latestPositionRef.current = clamped;
+        const settings = { ...current.settings, floatingControlPosition: clamped };
+        void saveSettings(settings);
+        return { ...current, settings };
+      });
+    },
+    []
+  );
 
   const mutateSelectedDay = (
     mutate: (blocks: RoutineBlock[]) => RoutineBlock[]
@@ -609,6 +642,7 @@ function App() {
     }
     if (data.settings.routineMode !== "timer") {
       setTimer(initialTimerState());
+      setTimerCount(0);
     }
     setRestAlert(false);
   }, [data.settings.routineMode]);
@@ -624,11 +658,44 @@ function App() {
         target?.tagName === "INPUT" ||
         target?.tagName === "TEXTAREA" ||
         target?.tagName === "SELECT";
-      if (isTyping || event.key.toLowerCase() !== "s") {
+      if (isTyping) {
         return;
       }
-      event.preventDefault();
-      handleSetComplete();
+      const key = event.key;
+      const player = playerRef.current;
+      if (key.toLowerCase() === "s") {
+        event.preventDefault();
+        handleSetComplete();
+      } else if (key.toLowerCase() === "f") {
+        event.preventDefault();
+        const stage = document.querySelector(".video-stage") as HTMLElement | null;
+        if (document.fullscreenElement) {
+          void document.exitFullscreen();
+        } else {
+          void stage?.requestFullscreen();
+        }
+      } else if (key === " " && player) {
+        event.preventDefault();
+        if (player.getPlayerState() === 1) {
+          player.pauseVideo();
+        } else {
+          player.playVideo();
+        }
+      } else if (key === "ArrowUp" && player) {
+        event.preventDefault();
+        player.unMute();
+        player.setVolume(clampVolume(player.getVolume() + 5));
+      } else if (key === "ArrowDown" && player) {
+        event.preventDefault();
+        player.unMute();
+        player.setVolume(clampVolume(player.getVolume() - 5));
+      } else if (key === "ArrowRight" && player) {
+        event.preventDefault();
+        player.seekTo(seekTarget(player.getCurrentTime(), 5, player.getDuration()), true);
+      } else if (key === "ArrowLeft" && player) {
+        event.preventDefault();
+        player.seekTo(seekTarget(player.getCurrentTime(), -5, player.getDuration()), true);
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -639,13 +706,23 @@ function App() {
     const startX = event.clientX;
     const startY = event.clientY;
     const origin = latestPositionRef.current;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const handle = event.currentTarget;
+    const control = handle.closest(".floating-control") as HTMLElement | null;
+    const stage = handle.closest(".video-stage") as HTMLElement | null;
+    handle.setPointerCapture(event.pointerId);
 
     const onMove = (moveEvent: PointerEvent) => {
-      const nextPosition = {
-        x: Math.min(Math.max(12, origin.x + moveEvent.clientX - startX), window.innerWidth - 160),
-        y: Math.min(Math.max(12, origin.y + moveEvent.clientY - startY), window.innerHeight - 220)
-      };
+      const stageW = stage?.clientWidth ?? window.innerWidth;
+      const stageH = stage?.clientHeight ?? window.innerHeight;
+      const controlW = control?.offsetWidth ?? 160;
+      const controlH = control?.offsetHeight ?? 70;
+      const nextPosition = clampFloatingPosition(
+        { x: origin.x + moveEvent.clientX - startX, y: origin.y + moveEvent.clientY - startY },
+        stageW,
+        stageH,
+        controlW,
+        controlH
+      );
       latestPositionRef.current = nextPosition;
       setData((current) => ({
         ...current,
@@ -724,7 +801,8 @@ function App() {
             videoIndex={videoIndex}
             onNextVideo={handleNextVideo}
             onPreviousVideo={handlePreviousVideo}
-            embedUrl={embedUrl}
+            videoId={videoId}
+            onPlayerReady={handlePlayerReady}
             routineName={todayPlan.routine?.name ?? ""}
             weekday={todayPlan.weekday}
             blocks={todayPlan.blocks}
@@ -740,6 +818,9 @@ function App() {
             timerRemaining={timer.remaining}
             timerDuration={timer.duration}
             onTimer={handleTimer}
+            timerCount={timerCount}
+            onResetTimerCount={handleResetTimerCount}
+            onClampFloating={handleClampFloating}
           />
         )}
 

@@ -4,6 +4,7 @@ import type { ExerciseItem, RoutineBlock, RoutinePreset, SetSegment } from "../t
 import {
   advanceSet,
   canAdvanceSet,
+  clampFloatingPosition,
   createBlockExercise,
   createCompletion,
   createMultiBlock,
@@ -11,11 +12,13 @@ import {
   emptyRoutineDays,
   finishRest,
   flattenPrescriptions,
+  formatRemainingSeconds,
   getRoutineForDate,
   initialTimerState,
   initialWorkoutSession,
   parseClusterReps,
   prescriptionForRound,
+  seekTarget,
   setActiveRoutine,
   tickTimer,
   toggleTimer,
@@ -325,5 +328,54 @@ describe("canAdvanceSet", () => {
   it("blocks advancing when not in the ready phase", () => {
     expect(canAdvanceSet("routine", true, 2, "rest")).toBe(false);
     expect(canAdvanceSet("routine", true, 2, "complete")).toBe(false);
+  });
+});
+
+describe("clampFloatingPosition", () => {
+  it("keeps a position already inside the stage", () => {
+    expect(clampFloatingPosition({ x: 50, y: 40 }, 800, 500, 660, 70)).toEqual({
+      x: 50,
+      y: 40
+    });
+  });
+
+  it("pulls an off-stage position back within bounds", () => {
+    // stage 400x300, control 660x70 → maxX = max(12, 400-660-12) = 12,
+    // maxY = max(12, 300-70-12) = 218
+    expect(clampFloatingPosition({ x: 1750, y: 900 }, 400, 300, 660, 70)).toEqual({
+      x: 12,
+      y: 218
+    });
+  });
+
+  it("clamps to the max margin when the control fits", () => {
+    expect(clampFloatingPosition({ x: 999, y: 999 }, 800, 500, 200, 70)).toEqual({
+      x: 800 - 200 - 12,
+      y: 500 - 70 - 12
+    });
+  });
+});
+
+describe("formatRemainingSeconds", () => {
+  it("shows the integer seconds while running", () => {
+    expect(formatRemainingSeconds(59)).toBe("59");
+    expect(formatRemainingSeconds(5)).toBe("5");
+  });
+
+  it("shows a dash when not running", () => {
+    expect(formatRemainingSeconds(0)).toBe("--");
+    expect(formatRemainingSeconds(-3)).toBe("--");
+  });
+});
+
+describe("seekTarget", () => {
+  it("moves forward and backward within bounds", () => {
+    expect(seekTarget(30, 5, 100)).toBe(35);
+    expect(seekTarget(30, -5, 100)).toBe(25);
+  });
+
+  it("clamps to start and end", () => {
+    expect(seekTarget(2, -5, 100)).toBe(0);
+    expect(seekTarget(98, 5, 100)).toBe(100);
   });
 });

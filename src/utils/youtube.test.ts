@@ -4,8 +4,25 @@ import {
   fetchYoutubeTitle,
   nextPlaylistIndex,
   previousPlaylistIndex,
-  toYoutubeEmbedUrl
+  toYoutubeEmbedUrl,
+  toYoutubeVideoId
 } from "./youtube";
+
+describe("toYoutubeVideoId", () => {
+  it("extracts id from watch url", () => {
+    expect(toYoutubeVideoId("https://www.youtube.com/watch?v=abc123")).toBe("abc123");
+  });
+  it("extracts id from youtu.be url", () => {
+    expect(toYoutubeVideoId("https://youtu.be/xyz789")).toBe("xyz789");
+  });
+  it("extracts id from shorts and embed", () => {
+    expect(toYoutubeVideoId("https://www.youtube.com/shorts/sh0rt")).toBe("sh0rt");
+    expect(toYoutubeVideoId("https://www.youtube.com/embed/emb3d")).toBe("emb3d");
+  });
+  it("returns empty for invalid", () => {
+    expect(toYoutubeVideoId("not a url")).toBe("");
+  });
+});
 
 describe("toYoutubeEmbedUrl", () => {
   it("converts a standard watch URL", () => {

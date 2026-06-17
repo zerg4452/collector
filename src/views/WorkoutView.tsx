@@ -23,10 +23,34 @@ import type {
 import {
   describePrescription,
   describeSegments,
+  formatRemainingSeconds,
   formatSeconds,
   prescriptionForRound,
   weekdayLabels
 } from "../domain/workout";
+import { clearVideoProgress, loadVideoProgress, saveVideoProgress } from "../utils/videoProgress";
+
+export type YTPlayerHandle = {
+  setVolume: (v: number) => void;
+  getVolume: () => number;
+  seekTo: (s: number, allow: boolean) => void;
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  loadVideoById: (id: string, startSeconds?: number) => void;
+  unMute: () => void;
+  playVideo: () => void;
+  pauseVideo: () => void;
+  getPlayerState: () => number;
+};
+
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (el: HTMLElement, config: Record<string, unknown>) => YTPlayerHandle;
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
 
 type WorkoutViewProps = {
   playlists: YoutubePlaylist[];
@@ -35,7 +59,8 @@ type WorkoutViewProps = {
   videoIndex: number;
   onNextVideo: () => void;
   onPreviousVideo: () => void;
-  embedUrl: string;
+  videoId: string;
+  onPlayerReady: (player: YTPlayerHandle) => void;
   routineName: string;
   weekday: Weekday;
   blocks: RoutineBlock[];
@@ -51,6 +76,9 @@ type WorkoutViewProps = {
   timerRemaining: number;
   timerDuration: number | null;
   onTimer: (seconds: number) => void;
+  timerCount: number;
+  onResetTimerCount: () => void;
+  onClampFloating: (stageWidth: number, stageHeight: number, controlWidth: number, controlHeight: number) => void;
 };
 
 function WorkoutView({
@@ -60,7 +88,8 @@ function WorkoutView({
   videoIndex,
   onNextVideo,
   onPreviousVideo,
-  embedUrl,
+  videoId,
+  onPlayerReady,
   routineName,
   weekday,
   blocks,
@@ -75,10 +104,20 @@ function WorkoutView({
   mode,
   timerRemaining,
   timerDuration,
-  onTimer
+  onTimer,
+  timerCount,
+  onResetTimerCount,
+  onClampFloating
 }: WorkoutViewProps) {
   const videoStageRef = useRef<HTMLDivElement | null>(null);
+  const playerHostRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<YTPlayerHandle | null>(null);
+  const currentVideoIdRef = useRef(videoId);
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
+
+  useEffect(() => {
+    currentVideoIdRef.current = videoId;
+  }, [videoId]);
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -88,6 +127,98 @@ function WorkoutView({
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    const stage = videoStageRef.current;
+    if (!stage) {
+      return;
+    }
+    const notify = () => {
+      const control = stage.querySelector(".floating-control") as HTMLElement | null;
+      onClampFloating(
+        stage.clientWidth,
+        stage.clientHeight,
+        control?.offsetWidth ?? 160,
+        control?.offsetHeight ?? 70
+      );
+    };
+    document.addEventListener("fullscreenchange", notify);
+    window.addEventListener("resize", notify);
+    return () => {
+      document.removeEventListener("fullscreenchange", notify);
+      window.removeEventListener("resize", notify);
+    };
+  }, [onClampFloating]);
+
+  useEffect(() => {
+    if (!videoId) {
+      return;
+    }
+    const ensureApi = () =>
+      new Promise<void>((resolve) => {
+        if (window.YT?.Player) {
+          resolve();
+          return;
+        }
+        if (!document.getElementById("yt-iframe-api")) {
+          const script = document.createElement("script");
+          script.id = "yt-iframe-api";
+          script.src = "https://www.youtube.com/iframe_api";
+          document.body.appendChild(script);
+        }
+        const prev = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = () => {
+          prev?.();
+          resolve();
+        };
+      });
+
+    let cancelled = false;
+    void ensureApi().then(() => {
+      if (cancelled || !playerHostRef.current || !window.YT) {
+        return;
+      }
+      if (playerRef.current) {
+        playerRef.current.loadVideoById(videoId, loadVideoProgress(videoId));
+        return;
+      }
+      const player = new window.YT.Player(playerHostRef.current, {
+        videoId,
+        playerVars: {
+          enablejsapi: 1,
+          origin: window.location.origin,
+          start: loadVideoProgress(videoId)
+        },
+        events: {
+          onReady: () => {
+            playerRef.current = player;
+            onPlayerReady(player);
+          },
+          onStateChange: (event: { data: number }) => {
+            if (event.data === 0) {
+              clearVideoProgress(currentVideoIdRef.current);
+            }
+          }
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [videoId, onPlayerReady]);
+
+  useEffect(() => {
+    if (!videoId) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      const player = playerRef.current;
+      if (player) {
+        saveVideoProgress(videoId, player.getCurrentTime());
+      }
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [videoId]);
 
   const handleToggleStageFullscreen = async () => {
     if (document.fullscreenElement === videoStageRef.current) {
@@ -198,13 +329,8 @@ function WorkoutView({
         ref={videoStageRef}
         className={`video-stage ${restAlert ? "rest-finished" : ""}`}
       >
-        {embedUrl ? (
-          <iframe
-            title="YouTube player"
-            src={embedUrl}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
+        {videoId ? (
+          <div ref={playerHostRef} className="video-frame" />
         ) : (
           <div className="video-placeholder">
             <Activity size={48} aria-hidden="true" />
@@ -275,6 +401,9 @@ function WorkoutView({
 
           {mode === "timer" && (
             <>
+              <div className="timer-count" title="타이머 실행 횟수">
+                {timerCount}회
+              </div>
               <button
                 className={`primary-action ${timerDuration === 30 ? "active" : ""}`}
                 type="button"
@@ -291,8 +420,16 @@ function WorkoutView({
               >
                 60초
               </button>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={onResetTimerCount}
+                title="카운트 초기화"
+              >
+                <RotateCcw size={18} aria-hidden="true" />
+              </button>
               <div className="timer-box">
-                {timerRemaining > 0 ? formatSeconds(timerRemaining) : "--:--"}
+                {formatRemainingSeconds(timerRemaining)}
               </div>
             </>
           )}
